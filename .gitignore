@@ -1,0 +1,7 @@
+# compiled files
+*.pyc
+frw
+predict
+
+# tmp files
+sg.csv
