@@ -92,6 +92,7 @@ class MRUDict (collections.MutableMapping):
 
 ### connection to server.py ###
 
+# should this be per-connection?
 server_py_cache = MRUDict (1000)
 
 def request_to_server_py (text, action='translate', use_cache=False):

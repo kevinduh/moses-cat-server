@@ -30,7 +30,7 @@ class KillerThread (threading.Thread):
     """
 
     # When this long has passed since the last activity was recorded, the child is killed
-    INACTIVE_TIMEOUT = datetime.timedelta (minutes=60)
+    INACTIVE_TIMEOUT = datetime.timedelta (hours=24)
 
     def __init__ (self, child_proc):
         super(KillerThread,self).__init__ ()
