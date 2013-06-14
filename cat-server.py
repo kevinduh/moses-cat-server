@@ -100,7 +100,7 @@ searchGraph = MRUDict (1000)
 server_py_cache = MRUDict (1000)
 
 def request_to_server_py (text, action='translate', use_cache=False):
-  port = 8644
+  port = 8664
   if isinstance (text, unicode):
     text = text.encode ('UTF-8')
   url = 'http://127.0.0.1:%d/%s?%s' % (
