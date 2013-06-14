@@ -9,7 +9,6 @@
 #include <fstream>
 // to lower
 //#include <cctype>
-// cout
 #include<iostream>
 // header ////////
 
@@ -121,93 +120,117 @@ Best best[1000];
 
 // main //////////
 
-int main(int argc, char* argv[])
+int main()
 {
-	prefix = tokenize(argv[1]);
 	load_states_transitions();
-	vector<Word> n;
-	BackTransition initialBack( 0.0, 0, 0, -1, 0, n);
-	states[0].back.push_back( initialBack );
-	int errorAllowed = 0;
-	
-	while( errorAllowed <= prefix.size() ) {
-		// printf("error level %d\n",errorAllowed);
-		for( int state = 0; state < states.size(); state++ ) {
-			for ( backIter back = states[state].back.begin(); back != states[state].back.end(); back++ ) {
-				if (back->error == errorAllowed) {
-					for ( transIter transition = states[state].transitions.begin(); transition != states[state].transitions.end(); transition++ ) {
-						// printf("\ttransition to %d\n",transition->to_state);
-						vector< Match > matches = string_edit_distance( back->matched, transition->output );
-						for ( matchIter match = matches.begin(); match != matches.end(); match++ ) {
-							// printf("\t\tmatching prefix %d/%d transition %d/%d error %d\n",match->prefixMatched,prefix.size(),match->transitionMatched,transition->output.size(),match->error);
-							processMatch( state, *back, *match, *transition );
-						}
-					} 
+	std::string line;
+	while (std::getline(cin,line))
+	{
+		prefix = tokenize(line);
+		Word last_token = prefix[prefix.size()-1];
+		vector<Word> n;
+		BackTransition initialBack( 0.0, 0, 0, -1, 0, n);
+		states[0].back.push_back( initialBack );
+		int errorAllowed = 0;
+		
+		while( errorAllowed <= prefix.size() ) {
+			// printf("error level %d\n",errorAllowed);
+			for( int state = 0; state < states.size(); state++ ) {
+				for ( backIter back = states[state].back.begin(); back != states[state].back.end(); back++ ) {
+					if (back->error == errorAllowed) {
+						for ( transIter transition = states[state].transitions.begin(); transition != states[state].transitions.end(); transition++ ) {
+							// printf("\ttransition to %d\n",transition->to_state);
+							vector< Match > matches = string_edit_distance( back->matched, transition->output );
+							for ( matchIter match = matches.begin(); match != matches.end(); match++ ) {
+								// printf("\t\tmatching prefix %d/%d transition %d/%d error %d\n",match->prefixMatched,prefix.size(),match->transitionMatched,transition->output.size(),match->error);
+								processMatch( state, *back, *match, *transition );
+							}
+						} 
+					}
 				}
 			}
-		}
-		if (best[errorAllowed].state != -1) {
-			break;
-		}
-		errorAllowed++;
-	}
-	
-	vector<string> matchedOutput;
-	Best &b = best[errorAllowed];
-	int nextState = 1;
-	if (b.transition > 0) {
-		nextState = b.transition;
-	} else if (b.state > 0) {
-		nextState = b.state;
-	} else if (b.back_state > 0 )
-	{
-		nextState = getStatePosition(hypKey, hypKey.size(), states[b.back_state].forward); 
-	}
-
-	/*
-	int state = b.back_state;
-	int matched = b.back_matched;
-	while( state > 0 ) {
-		//printf(" %d ",state);
-		for( backIter priorBack = states[state].back.begin(); priorBack != states[state].back.end(); priorBack++ ) {
-			if (priorBack->matched == matched) {
-				for(int i=priorBack->output.size();i!=0 ;i--) {
-					matchedOutput.push_back(surface[  priorBack->output[i-1] ]);
-				}
-				state = priorBack->back_state;
-				matched = priorBack->back_matched;
+			if (best[errorAllowed].state != -1) {
 				break;
 			}
+			errorAllowed++;
 		}
-	} */
-	
-	bool skip = true;
-	vector <string> frwOutput;
-	while (nextState  > 0)
-	{	
-		if (skip)  //start output from 2nd state
+		
+		vector<string> matchedOutput;
+		Best &b = best[errorAllowed];
+		int nextState = 1;
+		if (b.transition > 0) {
+			nextState = b.transition;
+		} else if (b.state > 0) {
+			nextState = b.state;
+		} else if (b.back_state > 0 )
 		{
-			skip = false;
-		} else { 
-			for(int i=0;i<states[nextState].foutput.size();i++) 
-			{
-				frwOutput.push_back( surface[ states[nextState].foutput[i]] );
-			}		
+			nextState = getStatePosition(hypKey, hypKey.size(), states[b.back_state].forward); 
 		}
-		nextState = getStatePosition(hypKey, hypKey.size(), states[nextState].forward);
+
+		// Matched prefix
+		int state = b.back_state;
+		int matched = b.back_matched;
+
+		string prefixString;
+		while( state > 0 ) {
+			//printf(" %d ",state);
+			for( backIter priorBack = states[state].back.begin(); priorBack != states[state].back.end(); priorBack++ ) {
+				if (priorBack->matched == matched) {
+					for(int i=priorBack->output.size();i!=0 ;i--) {
+						//matchedOutput.push_back(surface[  priorBack->output[i-1] ]);
+						prefixString += surface[ priorBack->output[i-1]] + ' ';
+					}
+					state = priorBack->back_state;
+					matched = priorBack->back_matched;
+					break;
+				}
+			}
+		} 
+		
+		bool skip = true;
+		vector <string> frwOutput;
+		//vector <string> matchPartialOutput;
+		//string bestState;
+		while (nextState  > 0)
+		{	
+			if (skip)  //start output from 2nd state
+			{
+				skip = false;
+				for(int i=0;i<states[nextState].foutput.size();i++) 
+				{
+					//matchedOutput.push_back( surface[ states[nextState].foutput[i-1]] );
+					prefixString  += surface[ states[nextState].foutput[i]] + ' ';
+				}
+			} else { 
+				for(int i=0;i<states[nextState].foutput.size();i++) 
+				{
+					frwOutput.push_back( surface[ states[nextState].foutput[i]] );
+				}		
+			}
+			nextState = getStatePosition(hypKey, hypKey.size(), states[nextState].forward);
+		}
+		/*print matched
+		string matchedString;
+		for(int it = matchedOutput.size() ; it != 0; --it)
+		{
+			//printf("%s ",matchedOutput[it-1].c_str()); // it-1
+			matchedString += matchedOutput[it-1] + ' ';
+		} */
+		// might want to check if surface[last_token].size() > 2, orelse add one more token (prefix[prefix.size()-2]) to the search 
+		unsigned found = prefixString.rfind(surface[last_token]); 
+		if ( found!=std::string::npos && found < prefixString.size())
+		{
+			printf("%s ",prefixString.substr(found+ surface[last_token].size()).c_str()); // or found+ last_token.size();
+		}
+		//print rest of prediction
+		for(int it = 0 ; it != frwOutput.size(); ++it)
+		{
+			printf("%s ",frwOutput[it].c_str()); // it-1
+		} 
+		printf("\n");
+		std::cout.flush();
 	}
-	/* print matched
-	for(int it = matchedOutput.size() ; it != 0; --it)
-	{
-		printf("%s ",matchedOutput[it-1].c_str()); // it-1
-	} */
-	//print rest of prediction
-	for(int it = 0 ; it != frwOutput.size(); ++it)
-	{
-		printf("%s ",frwOutput[it].c_str()); // it-1
-	} 
-	printf("\n");
-}
+}	
 
 inline vector< Match > string_edit_distance( int alreadyMatched, const vector< Word > &transition ) {
 	vector< Match > matches;
@@ -361,14 +384,13 @@ void load_states_transitions(){
 	int hyp;
 	float ignore;
 	char comma;
-    
-	cin.sync_with_stdio(false);
 
-	std::getline(std::cin,line); // skip headers (find efficient alt)
+	std::getline(cin,line); // skip headers (find efficient alt)
 	bool skip = true;
  		
-	while (std::getline(std::cin,line))
+	while (line.find("ENDSG") != 0)
 	{
+		std::getline(cin,line);
 		std::string out;
 		istringstream ss(line);
 		ss >> hyp >> comma >> ignore >> comma >> from_state >> comma >> ignore >> comma >> score >> comma >> recombined >> comma >> forward >> comma >>  forward_score;
