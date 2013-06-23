@@ -1,5 +1,4 @@
 #! /usr/bin/env python
-#! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
 ### includes ###
@@ -101,14 +100,20 @@ searchGraph = MRUDict (1000)
 
 server_py_cache = MRUDict (1000)
 
-def request_to_server_py (text, action='translate', use_cache=False):
+def request_to_server_py (text, action='translate', use_cache=False, target=''):
   port = 8644  # server.py
+
   if isinstance (text, unicode):
     text = text.encode ('UTF-8')
+  if isinstance (target, unicode):
+    target = target.encode ('UTF-8')
 
-  params = '' #only needed for translation
-  if action =='translate':
+  params = '' # additional parameters
+  if action == 'translate':
     params = '&key=0&source=xx&target=xx&sg=true' # sg=true to return searchgraph
+  elif action == 'align' or action == 'tokenize':
+    params = '&t=%s' % urllib.quote_plus(target)
+
   url = 'http://127.0.0.1:%d/%s?%s' % (
     port,
     action,
@@ -218,6 +223,7 @@ class MinimalConnection(SocketConnection):
     @event
     def configure(self, data):
       print "called configure", data
+      print "not implemented, request ignored"
 
     # DECODE
     @event
@@ -239,7 +245,8 @@ class MinimalConnection(SocketConnection):
     @event
     def rejectSuffix(self, data):
       print "called rejectSuffix", data
-
+      print "not implemented, request ignored"
+ 
     # SET PREFIX
     @event
     def setPrefix(self, data):
@@ -265,11 +272,12 @@ class MinimalConnection(SocketConnection):
       except:
         userInput = prefix
 
-      sgId = hashlib.sha224(data[u'source']).hexdigest()
+      sgId = hashlib.sha224(data[u'source'].encode('UTF-8')).hexdigest()
       if searchGraph.get(sgId) is None:
         logging.debug('request searchgraph')
         request_translation_and_searchgraph(data[u'source'], returnTranslation = False)
 
+      print "calling predict"
       prediction = ''
       p = subprocess.Popen('./predict', stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, preexec_fn = lambda: os.nice(10),)
 
@@ -327,48 +335,125 @@ class MinimalConnection(SocketConnection):
                       } }
       self.emit('setPrefixResult', res)
 
+    # VALIDATE
     @event
     def Validate(self,data):
-        print "called Validate", data
-    # getAlignments
+      print "called Validate", data
+      print "not implemented, request ignored"
 
+    # GET ALIGNMENTS
     @event
     def getAlignments(self, data):
       print "called getAlignments", data
 
-    # getTokens
-    @event
-    def getTokens(self, data):
-      print "called getTokens", data
+      # requires source and target text
+      source = toutf8(data[u'source'])
+      target = toutf8(data[u'target'])
 
-      tt = tokentracker.TokenTracker()
-      source = data[u'source']
-      spans = tt.tokenize(source)
+      # call server and get relevant information from reponse
+      response = request_to_server_py(source, action='align', target=target)
+      srcSpans = response[u'data'][u'tokenization'][u'src']
+      tgtSpans = response[u'data'][u'tokenization'][u'tgt']
 
-      target = data[u'target']
-      tgtSpans = tt.tokenize(target)
+      # mismatch with span specifications, maybe should be changed in UI
+      for i in range(0, len(tgtSpans)):
+        if tgtSpans[i][1] is not None:
+          tgtSpans[i][1] += 1
+        elif i > 0:
+          tgtSpans[i] = [ tgtSpans[i-1][1], tgtSpans[i-1][1]+1 ]
+        else:
+          tgtSpans[i] = [0,0]
+      for i in range(0, len(srcSpans)):
+        if srcSpans[i][1] is not None:
+          srcSpans[i][1] += 1
+        elif i > 0:
+          srcSpans[i] = [ srcSpans[i-1][1], srcSpans[i-1][1]+1 ]
+        else:
+          srcSpans[i] = [0,0]
+
+      alignmentPoints = response[u'data'][u'alignment']
+
+      # process alignment points into matrix
+      print "alignmentPoints ", alignmentPoints
+      alignmentMatrix = [[0 for i in range(len(tgtSpans))] for j in range(len(srcSpans))]
+      for point in alignmentPoints:
+        alignmentMatrix[ point[0] ][ point[1] ] = 1
+      print "alignmentMatrix ", alignmentMatrix
+      print "source ", source
+      print "target ", target
+      print "sourceSegmentation ",  srcSpans
+      print "targetSegmentation ", tgtSpans
 
       errors = []
       res = { 'errors': errors,
               'data': {
-                    'source': source ,
-                    'sourceSegmentation' : spans,
-                    'target': target , 'targetSegmentation': tgtSpans
+                    'source': source,
+                    'sourceSegmentation': srcSpans,
+                    'target': target, 
+                    'targetSegmentation': tgtSpans,
+                    'alignments': alignmentMatrix
+                    } }
+      self.emit('getAlignmentsResult', res)
+
+    # GET TOKENS
+    @event
+    def getTokens(self, data):
+      print "called getTokens", data
+
+      # requires source and target text
+      source = toutf8(data[u'source'])
+      target = toutf8(data[u'target'])
+
+      # call server and get relevant information from reponse
+      response = request_to_server_py(source, action='tokenize', target=target)
+      srcSpans = response[u'data'][u'tokenization'][u'src']
+      tgtSpans = response[u'data'][u'tokenization'][u'tgt']
+
+      # mismatch with span specifications, maybe should be changed in UI
+      for i in range(0, len(tgtSpans)):
+        if tgtSpans[i][1] is not None:
+          tgtSpans[i][1] += 1
+        elif i > 0:
+          tgtSpans[i] = [ tgtSpans[i-1][1], tgtSpans[i-1][1]+1 ]
+        else:
+          tgtSpans[i] = [0,0]
+      for i in range(0, len(srcSpans)):
+        if srcSpans[i][1] is not None:
+          srcSpans[i][1] += 1
+        elif i > 0:
+          srcSpans[i] = [ srcSpans[i-1][1], srcSpans[i-1][1]+1 ]
+        else:
+          srcSpans[i] = [0,0]
+
+      errors = []
+      res = { 'errors': errors,
+              'data': {
+                    'source': source,
+                    'sourceSegmentation' : srcSpans,
+                    'target': target, 
+		    'targetSegmentation': tgtSpans
                     } }
       self.emit('getTokensResult', res)
 
+    # GET CONFIDENCES
     @event
     def getConfidences(self, data):
       print "called getConfidences", data
+      print "not implemented, request ignored"
 
+    # SET REPLACEMENT RULE
     @event
     def setReplacementRule(self, data):
       print "called setReplacementRule", data
+      print "not implemented, request ignored"
 
+    # GET VALIDATED CONTRIBUTIONS
     @event
     def getValidatedContributions(self, data):
       print "called getValidatedContributions", data
+      print "not implemented, request ignored"
 
+    # BICONCOR
     @event
     def biconcor (self, data):
       print "called biconcor", data
