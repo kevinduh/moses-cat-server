@@ -8,7 +8,7 @@
 #include <sstream>
 #include <fstream>
 // to lower
-//#include <cctype>
+#include <cctype>
 #include<iostream>
 // header ////////
 
@@ -166,18 +166,15 @@ int main()
 		{
 			nextState = getStatePosition(hypKey, hypKey.size(), states[b.back_state].forward); 
 		}
-
 		// Matched prefix
 		int state = b.back_state;
 		int matched = b.back_matched;
 
 		string prefixString;
 		while( state > 0 ) {
-			//printf(" %d ",state);
 			for( backIter priorBack = states[state].back.begin(); priorBack != states[state].back.end(); priorBack++ ) {
 				if (priorBack->matched == matched) {
 					for(int i=priorBack->output.size();i!=0 ;i--) {
-						//matchedOutput.push_back(surface[  priorBack->output[i-1] ]);
 						prefixString += surface[ priorBack->output[i-1]] + ' ';
 					}
 					state = priorBack->back_state;
@@ -189,8 +186,6 @@ int main()
 		
 		bool skip = true;
 		vector <string> frwOutput;
-		//vector <string> matchPartialOutput;
-		//string bestState;
 		while (nextState  > 0)
 		{	
 			if (skip)  //start output from 2nd state
@@ -198,7 +193,6 @@ int main()
 				skip = false;
 				for(int i=0;i<states[nextState].foutput.size();i++) 
 				{
-					//matchedOutput.push_back( surface[ states[nextState].foutput[i-1]] );
 					prefixString  += surface[ states[nextState].foutput[i]] + ' ';
 				}
 			} else { 
@@ -209,23 +203,22 @@ int main()
 			}
 			nextState = getStatePosition(hypKey, hypKey.size(), states[nextState].forward);
 		}
-		/*print matched
-		string matchedString;
-		for(int it = matchedOutput.size() ; it != 0; --it)
+		
+		string lWord = surface[last_token];
+		transform(lWord.begin(), lWord.end(), lWord.begin(), (int(*)(int))std::tolower);
+		int matchedSize = tokenize(prefixString).size();
+		if ( matchedSize > 5)
+			lWord = ' '+ lWord;
+		unsigned found = prefixString.rfind(lWord); 
+		
+		if ( found != std::string::npos && found < prefixString.size()) // && (matchedSize/2 < found || matchedSize < 4) )
 		{
-			//printf("%s ",matchedOutput[it-1].c_str()); // it-1
-			matchedString += matchedOutput[it-1] + ' ';
-		} */
-		// might want to check if surface[last_token].size() > 2, orelse add one more token (prefix[prefix.size()-2]) to the search 
-		unsigned found = prefixString.rfind(surface[last_token]); 
-		if ( found!=std::string::npos && found < prefixString.size())
-		{
-			printf("%s ",prefixString.substr(found+ surface[last_token].size()).c_str()); // or found+ last_token.size();
+			printf("%s",prefixString.substr(found+ lWord.size()).c_str());
 		}
 		//print rest of prediction
 		for(int it = 0 ; it != frwOutput.size(); ++it)
 		{
-			printf("%s ",frwOutput[it].c_str()); // it-1
+			printf(" %s",frwOutput[it].c_str());
 		} 
 		printf("\n");
 		std::cout.flush();
