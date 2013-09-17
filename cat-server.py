@@ -13,6 +13,7 @@ import cStringIO
 import subprocess
 import logging, datetime
 import copy
+import signal
 
 try:
   import simplejson as json
@@ -46,6 +47,13 @@ biconcor_processes = {}
 
 ### generic utils ###
 
+
+class Alarm(Exception):
+    pass
+
+def alarm_handler(signum, frame):
+    """ used for timeout when calling subprocess """
+    raise Alarm
 
 def toutf8(string):
   """ strings in python are unicode. We need to convert strings to uft8 before """
@@ -286,30 +294,28 @@ class MinimalConnection(SocketConnection):
 
       logging.debug("calling prediction binary")
       prediction = ''
-      p = subprocess.Popen('./predict', stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, preexec_fn = lambda: os.nice(10),)
-
-      p.stdin.write(searchGraph[sgId])
-      p.stdin.flush()
-      p.stdin.write(userInput+'\n')
-      p.stdin.flush()
-      # timeout?
-      prediction = p.stdout.readline()
-      p.kill()
-      ''' poll_obj = select.poll()
-      poll_obj.register(p.stdout, select.POLLIN)
-      t = 0
       try:
-        while ((t < 4) and (prediction == '')):
-            if poll_obj.poll(0):
-                try:
-                    prediction = p.stdout.readline()
-                except Exception as e:
-                    print e
-            else:
-                time.sleep(1)
-                t += 1
-      except Exception as e:
-        errors.append(str(e)) '''
+          p = subprocess.Popen('./predict', stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, preexec_fn = lambda: os.nice(10),)
+
+          p.stdin.write(searchGraph[sgId])
+          p.stdin.flush()
+          p.stdin.write(userInput+'\n')
+          p.stdin.flush()
+
+          """ timeout """
+          signal.signal(signal.SIGALRM, alarm_handler)
+          signal.alarm(11)  # 11"
+
+          try:
+            prediction, error =  p.communicate()
+            signal.alarm(0)  # reset the alarm
+          except Alarm:
+            p.kill()
+            p.wait()
+      except:
+        logging.debug("subprocess error")
+        '''prediction = p.stdout.readline()
+          p.kill()'''
 
       if prediction:
           # add prefix to ensure correct tokenization (esp. of opening/closing quotes).
