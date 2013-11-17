@@ -204,18 +204,14 @@ int main()
 			nextState = getStatePosition(hypKey, hypKey.size(), states[nextState].forward);
 		}
 		
-		/*string lWord = surface[last_token];
-		transform(lWord.begin(), lWord.end(), lWord.begin(), (int(*)(int))std::tolower);
-		int matchedSize = tokenize(prefixString).size();
-		if ( matchedSize > 5)
-			lWord = ' '+ lWord;
-		unsigned found = prefixString.rfind(lWord); */
-		unsigned found = prefixString.rfind(surface[last_token]);
-		
-		if ( found != std::string::npos && found < prefixString.size()) // && (matchedSize/2 < found || matchedSize < 4) )
+		string lWord = surface[last_token];
+		std::transform(lWord.begin(), lWord.end(), lWord.begin(), ::tolower);
+		string prefixToLower = prefixString;
+		std::transform(prefixToLower.begin(), prefixToLower.end(), prefixToLower.begin(), ::tolower);
+		unsigned found = prefixToLower.rfind(lWord);
+		if ( found != std::string::npos && found < prefixToLower.size()) // && (matchedSize/2 < found || matchedSize < 4) )
 		{
-			//printf("%s",prefixString.substr(found+ lWord.size()).c_str());
-			printf("%s",prefixString.substr(found+ surface[last_token].size()).c_str());
+			printf("%s",prefixString.substr(found+ lWord.size()).c_str()); // prefixString is case sensitive
 		}
 		//print rest of prediction
 		for(int it = 0 ; it != frwOutput.size(); ++it)
