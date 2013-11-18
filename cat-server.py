@@ -32,7 +32,16 @@ except:
 
 from biconcor import BiconcorProcess, parse_biconcor_output_into_json_struct
 
+html_escape_table = {
+     "&": "&amp;",
+     '"': "&quot;",
+     "'": "&apos;",
+     ">": "&gt;",
+     "<": "&lt;",
+     }
 
+def html_escape(text):
+     return "".join(html_escape_table.get(c,c) for c in text)
 
 ### global vars ###
 
@@ -274,18 +283,29 @@ class MinimalConnection(SocketConnection):
       caretPos = data[u'caretPos']
 
       prefix = target[0:caretPos]
-      prefix = toutf8(prefix) # probably unnecessary
+      prefix = toutf8(prefix)
+      #prefix = html_escape(prefix)
 
-      try:
-        # tokenize prefix (change of var name to "userInput" because "prefix" needs to be returned to the client)
-        pProcess  = request_to_server_py(prefix, action='tokenize')
-        userInput = pProcess[u'data'][u'translations'][0][u'tokenizedText']
-        #truecase
-        pProcess  = request_to_server_py(toutf8(userInput), action='truecase')
-        userInput = pProcess[u'data'][u'translations'][0][u'truecasedText']
-        userInput = toutf8(userInput)
-      except:
-        userInput = prefix
+      print '#############PREFIX#################'
+      print prefix
+      print '#########################################'
+
+      # tokenize prefix (change of var name to "userInput" because "prefix" needs to be returned to the client)
+      pProcess  = request_to_server_py('', action='tokenize', target=prefix)
+      userInput = pProcess[u'data'][u'tokenizedTarget']
+      #truecase
+      print '##########TOKENIZED##################'
+      print userInput
+      print '#########################################'
+
+      pProcess  = request_to_server_py(toutf8(userInput), action='truecase')
+      userInput = pProcess[u'data'][u'translations'][0][u'truecasedText']
+      userInput = toutf8(userInput)
+
+
+      print '##########TRUECASED##################'
+      print userInput
+      print '#########################################'
 
       sgId = hashlib.sha224(source).hexdigest()
       if searchGraph.get(sgId) is None:
@@ -321,6 +341,9 @@ class MinimalConnection(SocketConnection):
           # add prefix to ensure correct tokenization (esp. of opening/closing quotes).
           prediction = prefix + prediction
           #postprocessing
+          print '#########################################'
+          print prediction
+          print '#########################################'
           pProcess   = request_to_server_py(prediction, 'detokenize')
           prediction = pProcess[u'data'][u'translations'][0][u'detokenizedText']
 

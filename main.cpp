@@ -166,23 +166,7 @@ int main()
 		{
 			nextState = getStatePosition(hypKey, hypKey.size(), states[b.back_state].forward); 
 		}
-		// Matched prefix
-		/*int state = b.back_state;
-		int matched = b.back_matched;
 
-		string prefixString;
-		while( state > 0 ) {
-			for( backIter priorBack = states[state].back.begin(); priorBack != states[state].back.end(); priorBack++ ) {
-				if (priorBack->matched == matched) {
-					for(int i=priorBack->output.size();i!=0 ;i--) {
-						prefixString += surface[ priorBack->output[i-1]] + ' ';
-					}
-					state = priorBack->back_state;
-					matched = priorBack->back_matched;
-					break;
-				}
-			}
-		} */
 		string prefixString;
 		bool skip = true;
 		vector <string> frwOutput;
@@ -208,8 +192,11 @@ int main()
 		std::transform(lWord.begin(), lWord.end(), lWord.begin(), ::tolower);
 		string prefixToLower = prefixString;
 		std::transform(prefixToLower.begin(), prefixToLower.end(), prefixToLower.begin(), ::tolower);
-		unsigned found = prefixToLower.rfind(lWord);
-		if ( found != std::string::npos && found < prefixToLower.size()) // && (matchedSize/2 < found || matchedSize < 4) )
+		unsigned found = prefixToLower.find_first_of(lWord); //rfind(lWord);
+		/*cout << "-PARTIAL:" << prefixString;
+		cout << "-PREFIX:" << lWord;
+		cout << "#";*/
+		if ( found != std::string::npos && found < prefixToLower.size()) 
 		{
 			printf("%s",prefixString.substr(found+ lWord.size()).c_str()); // prefixString is case sensitive
 		}
