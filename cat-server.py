@@ -32,27 +32,13 @@ except:
 
 from biconcor import BiconcorProcess, parse_biconcor_output_into_json_struct
 
-html_escape_table = {
-     "&": "&amp;",
-     '"': "&quot;",
-     "'": "&apos;",
-     ">": "&gt;",
-     "<": "&lt;",
-     }
-
-def html_escape(text):
-     return "".join(html_escape_table.get(c,c) for c in text)
-
 ### global vars ###
-
 
 # root directory of the server
 ROOT = os.path.normpath(os.path.dirname(__file__))
 
-
 # BiconcorProcess objects, indexed by the language pair
 biconcor_processes = {}
-
 
 ### generic utils ###
 
@@ -65,13 +51,12 @@ def alarm_handler(signum, frame):
     raise Alarm
 
 def toutf8(string):
-  """ strings in python are unicode. We need to convert strings to uft8 before """
+  """ strings in python are unicode. We need to convert them to uft8 """
   return string.encode('utf-8')
 
 
 class MRUDict (collections.MutableMapping):
     """ Container class that acts as a dictionary but only remembers the K items that were last accessed """
-
     def __init__ (self, max_size, items=()):
         self.max_size = int (max_size)
         self.impl = collections.OrderedDict ()
@@ -149,14 +134,13 @@ def request_to_server_py (text, action='translate', use_cache=False, target=''):
   return copy.deepcopy(output_struct)
 
 def request_translation_and_searchgraph(source, returnTranslation = True):
-
     translation = request_to_server_py (source, use_cache=True)
     logging.debug('translation')
     logging.debug(translation)
     target = translation[u'data'][u'translations'][0][u'translatedText']
 
-    srcSpans = fix_span_mismatches(translation[u'data'][u'translations'][0][u'tokenization'][u'src']) #translation[u'data'][u'translations'][0][u'tokenization'][u'src'] #
-    tgtSpans = fix_span_mismatches(translation[u'data'][u'translations'][0][u'tokenization'][u'tgt']) #translation[u'data'][u'translations'][0][u'tokenization'][u'tgt'] #fix_span_mismatches(translation[u'data'][u'translations'][0][u'tokenization'][u'tgt'])
+    srcSpans = fix_span_mismatches(translation[u'data'][u'translations'][0][u'tokenization'][u'src'])
+    tgtSpans = fix_span_mismatches(translation[u'data'][u'translations'][0][u'tokenization'][u'tgt'])
 
     sg = translation[u'data'][u'translations'][0][u'searchGraph']
 
@@ -200,9 +184,8 @@ def fix_span_mismatches(spans):
     return spans
 ### main Tornadio class ###
 
-# This class will handle our client/server API. Each function we would like to
-# exports needs to be decorated with the @event decorator (see example below).
-
+"""This class will handle our client/server API. Each function we would like to
+    export needs to be decorated with the @event decorator (see example below)."""
 class MinimalConnection(SocketConnection):
 
     def emit (self, *args, **kwargs):
@@ -284,28 +267,14 @@ class MinimalConnection(SocketConnection):
 
       prefix = target[0:caretPos]
       prefix = toutf8(prefix)
-      #prefix = html_escape(prefix)
-
-      print '#############PREFIX#################'
-      print prefix
-      print '#########################################'
 
       # tokenize prefix (change of var name to "userInput" because "prefix" needs to be returned to the client)
       pProcess  = request_to_server_py('', action='tokenize', target=prefix)
       userInput = pProcess[u'data'][u'tokenizedTarget']
       #truecase
-      print '##########TOKENIZED##################'
-      print userInput
-      print '#########################################'
-
       pProcess  = request_to_server_py(toutf8(userInput), action='truecase')
       userInput = pProcess[u'data'][u'translations'][0][u'truecasedText']
       userInput = toutf8(userInput)
-
-
-      print '##########TRUECASED##################'
-      print userInput
-      print '#########################################'
 
       sgId = hashlib.sha224(source).hexdigest()
       if searchGraph.get(sgId) is None:
@@ -341,9 +310,6 @@ class MinimalConnection(SocketConnection):
           # add prefix to ensure correct tokenization (esp. of opening/closing quotes).
           prediction = prefix + prediction
           #postprocessing
-          print '#########################################'
-          print prediction
-          print '#########################################'
           pProcess   = request_to_server_py(prediction, 'detokenize')
           prediction = pProcess[u'data'][u'translations'][0][u'detokenizedText']
 
@@ -368,7 +334,17 @@ class MinimalConnection(SocketConnection):
                       } }
       self.emit('setPrefixResult', res)
 
-    # VALIDATE
+    # Validates source-target pair
+    """ @param {Object}
+    * @setup obj
+    *   source {String}
+    *   target {String}
+    * @trigger validateResult
+    * @return {Object}
+    *   errors {Array} List of error messages
+    *   data {Object}
+    *   @setup data
+    *     elapsedTime {Number} ms """
     @event
     def Validate(self,data):
       print "called Validate", data
@@ -452,19 +428,125 @@ class MinimalConnection(SocketConnection):
                     } }
       self.emit('getTokensResult', res)
 
-    # GET CONFIDENCES
+
+    # Retrieves confidence results for the current segment
+    """ @param {Object}
+    * @setup obj
+    *   source {String}
+    *   target {String}
+    *   validatedTokens {Array} List of Booleans, where 1 indicates that the token is validated
+    * @trigger getConfidencesResult
+    * @return {Object}
+    *   errors {Array} List of error messages
+    *   data {Object}
+    *   @setup data
+    *     quality {Number} Quality measure of overall hypothesis
+    *     confidences {Array} List of floats for each token
+    *     source {String} Verified source
+    *     sourceSegmentation {Array} Verified source segmentation
+    *     target {String} Result
+    *     targetSegmentation {Array}
+    *     elapsedTime {Number} ms
+    """
     @event
     def getConfidences(self, data):
       print "called getConfidences", data
       print "getConfidences not implemented, request ignored"
 
     # SET REPLACEMENT RULE
+    """ Adds a replacement rule.
+    * @param {Object}
+    * @setup obj
+    *   [ruleId] {Number}
+    *   sourceRule {String}
+    *   targetRule {String}
+    *   targetReplacement {String}
+    *   matchCase {Boolean}
+    *   isRegExp {Boolean}
+    *   persistent {Boolean} TODO
+    * @trigger setReplacementRuleResult
+    * @return {Object}
+    *   errors {Array} List of error messages
+    *   data {Object}
+    *   @setup data
+    *     elapsedTime {Number} ms
+    *     ruleId {Number} ruleId of the rule
+    """
     @event
     def setReplacementRule(self, data):
       print "called setReplacementRule", data
       print "setReplacementRule not implemented, request ignored"
 
-    # GET VALIDATED CONTRIBUTIONS
+    # GET REPLACEMENT RULE - Returns the list of rules
+    """
+    * @trigger getReplacementRulesResult
+    * @return {Object}
+    *   errors {Array} List of error messages
+    *   data {Object}
+    *   @setup data
+    *     elapsedTime {Number} ms
+    *     rules {Array} List of rules
+    *     @setup rules
+    *       ruleId {Number}
+    *       sourceRule {String}
+    *       targetRule {String}
+    *       targetReplacement {String}
+    *       isRegExp {Boolean}
+    *       matchCase {Boolean}
+    *       nFails {Number} Number of times the regex provoked an exception
+    *       persistent {Boolean} TODO
+    """
+    @event
+    def getReplacementRule(self, data):
+      print "called getReplacementRule", data
+      print "getReplacementRule not implemented, request ignored"
+
+    # Deletes replacement rule
+    """ @param {Object}
+    * @setup obj
+    *   ruleId {Number}
+    * @trigger delReplacementRuleResult
+    * @return {Object}
+    *   errors {Array} List of error messages
+    *   data {Object}
+    *   @setup data
+    *     elapsedTime {Number} ms
+    """
+    @event
+    def delReplacementRule(self, data):
+      print "called setReplacementRule", data
+      print "delReplacementRule not implemented, request ignored"
+
+    # Applies *all* replacement rules, so that the user does not need to type for an entered rule to become visible.
+    """ @param {Object}
+    * @setup obj
+    *   source {String}
+    *   target {String}
+    * @trigger applyReplacementRulesResult
+    * @return {Object}
+    *   errors {Array} List of error messages
+    *   data {Object}
+    *   @setup data
+    *     elapsedTime {Number} ms
+    """
+    @event
+    def applyReplacementRule(self, data):
+      print "called setReplacementRule", data
+      print "applyReplacementRule not implemented, request ignored"
+
+
+    # Retrieves contributions that users completed after full supervision
+    """ * @trigger getValidatedContributionsResult
+    * @return {Object}
+    *   errors {Array} List of error messages
+    *   data {Object}
+    *   @setup data
+    *     contributions {Array} List of validated contributions
+    *     @setup contributions
+    *       source {String} Validated source
+    *       target {String} Validated target
+    *     elapsedTime {Number} ms
+    """
     @event
     def getValidatedContributions(self, data):
       print "called getValidatedContributions", data
@@ -516,8 +598,6 @@ class RouterConnection(SocketConnection):
 
 # Create tornadio router
 MinimalRouter = TornadioRouter(RouterConnection)
-
-
 
 ### cmd-line parsing and server init ###
 
