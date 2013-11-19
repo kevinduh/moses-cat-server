@@ -167,7 +167,7 @@ int main()
 			nextState = getStatePosition(hypKey, hypKey.size(), states[b.back_state].forward); 
 		}
 
-		string prefixString;
+		string partialMatch;
 		bool skip = true;
 		vector <string> frwOutput;
 		while (nextState  > 0)
@@ -177,7 +177,7 @@ int main()
 				skip = false;
 				for(int i=0;i<states[nextState].foutput.size();i++) 
 				{
-					prefixString  += surface[ states[nextState].foutput[i]] + ' ';
+					partialMatch  += surface[ states[nextState].foutput[i]] + ' ';
 				}
 			} else { 
 				for(int i=0;i<states[nextState].foutput.size();i++) 
@@ -188,17 +188,17 @@ int main()
 			nextState = getStatePosition(hypKey, hypKey.size(), states[nextState].forward);
 		}
 		
-		string lWord = surface[last_token];
-		std::transform(lWord.begin(), lWord.end(), lWord.begin(), ::tolower);
-		string prefixToLower = prefixString;
-		std::transform(prefixToLower.begin(), prefixToLower.end(), prefixToLower.begin(), ::tolower);
-		unsigned found = prefixToLower.find_first_of(lWord); //rfind(lWord);
-		/*cout << "-PARTIAL:" << prefixString;
-		cout << "-PREFIX:" << lWord;
+		string lastUserToken = surface[last_token];
+		std::transform(lastUserToken.begin(), lastUserToken.end(), lastUserToken.begin(), ::tolower);
+		string partialMatchToLower = partialMatch;
+		std::transform(partialMatchToLower.begin(), partialMatchToLower.end(), partialMatchToLower.begin(), ::tolower);
+		unsigned found = partialMatchToLower.find(lastUserToken); //rfind(lastUserToken);
+		/*cout << "PARTIAL:" << partialMatch;
+		cout << "PREFIX:" << lastUserToken;
 		cout << "#";*/
-		if ( found != std::string::npos && found < prefixToLower.size()) 
+		if ( found != std::string::npos && found < partialMatchToLower.size()) 
 		{
-			printf("%s",prefixString.substr(found+ lWord.size()).c_str()); // prefixString is case sensitive
+			printf("%s",partialMatch.substr(found+ lastUserToken.size()).c_str()); // partialMatch is case sensitive
 		}
 		//print rest of prediction
 		for(int it = 0 ; it != frwOutput.size(); ++it)
