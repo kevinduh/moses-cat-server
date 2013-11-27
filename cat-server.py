@@ -3,16 +3,21 @@
 
 ### includes ###
 
-import sys
-import os
-import urllib, urllib2
-import time
-import collections
-import hashlib
 import cStringIO
-import subprocess
-import logging, datetime
+import collections
 import copy
+import datetime
+import functools
+import hashlib
+import logging
+import os
+import re
+import subprocess
+import sys
+import time
+import traceback
+import urllib
+import urllib2
 
 try:
   import simplejson as json
@@ -45,6 +50,23 @@ biconcor_processes = {}
 
 
 ### generic utils ###
+
+def cat_event (func):
+  """ Use this in place of tornadio's `event'. Adds some debugging utils to the function """
+  @functools.wraps (func)
+  def wrapper (self, *args, **kwargs):
+    try:
+      print
+      print "%s(%s)" % (
+        func.__name__,
+        ', '.join (map(repr,args) + ['%s=%r' % i for i in sorted(kwargs.iteritems())])
+        )
+      return func (self, *args, **kwargs)
+    except Exception:
+      # herve - if we raise an exception here, the whole websocket gets disconnected. So rather than do that, we print out the
+      # error, and silence the exception. The client won't see a response, but at least they also won't get disconnected.
+      print traceback.format_exc()
+  return event (wrapper)
 
 
 def toutf8(string):
@@ -101,12 +123,18 @@ searchGraph = MRUDict (1000)
 server_py_cache = MRUDict (1000)
 
 def request_to_server_py (text, action='translate', use_cache=False, target=''):
-  port = 8644  # server.py
+  port = 7754  # server.py
 
   if isinstance (text, unicode):
     text = text.encode ('UTF-8')
   if isinstance (target, unicode):
     target = target.encode ('UTF-8')
+
+  # herve - several operations crash in server.py if there are spaces around the string. I'm not sure where to strip them -- here
+  # in cat-server.py, or in the GUI itself. Trimming off whitespace in the GUI might solve the bug "at the root", but as far as I
+  # know it might sometimes be required to preserve whitespace. So I've added this here.
+  text = text and text.strip()
+  target = target and target.strip()
 
   params = '' # additional parameters
   if action == 'translate':
@@ -120,17 +148,38 @@ def request_to_server_py (text, action='translate', use_cache=False, target=''):
     'q=%s' % urllib.quote_plus(text) + params,
     )
   logging.debug(url)
+
+  missing = object()
+  output_struct = missing
   if use_cache:
     from_cache = server_py_cache.get (url)
     if from_cache is not None:
-      return copy.deepcopy(from_cache)
-  req = urllib2.Request (url, '', {'Content-Type': 'application/json'})
-  f = urllib2.urlopen (url)
-  output_struct = json.load(f)
-  f.close()
-  if use_cache:
-    server_py_cache[url] = output_struct
-  return copy.deepcopy(output_struct)
+      print "%s [cached]" % url
+      output_struct = from_cache
+
+  if output_struct is missing:
+    print url
+    req = urllib2.Request (url, '', {'Content-Type': 'application/json'})
+
+    try:
+      f = urllib2.urlopen (url)
+    except urllib2.HTTPError, err:
+      f = err
+    json_str = f.read()
+    f.close()
+
+    try:
+      output_struct = json.loads (json_str)
+    except Exception:
+      print "Can't parse JSON: %r" % json_str
+      raise
+    if use_cache:
+      server_py_cache[url] = output_struct
+
+  if output_struct.get('traceback'):
+    print re.sub (r'^', 'server.py: ', output_struct['traceback'], flags=re.M)
+  return copy.deepcopy (output_struct)
+
 
 def request_translation_and_searchgraph(source, returnTranslation = True):
 
@@ -182,10 +231,10 @@ def fix_span_mismatches(spans):
         else:
           spans[i] = [0,0]
     return spans
-### main Tornadio class ###
+
 
 # This class will handle our client/server API. Each function we would like to
-# exports needs to be decorated with the @event decorator (see example below).
+# exports needs to be decorated with the @cat_event decorator (see example below).
 
 class MinimalConnection(SocketConnection):
 
@@ -197,84 +246,69 @@ class MinimalConnection(SocketConnection):
         )
       return super(MinimalConnection,self).emit (*args, **kwargs)
 
-    # @event is a decorator that exports the function to be used with the
+    # @cat_event is a decorator that exports the function to be used with the
     # socket.io javascript client.
-    @event
+    @cat_event
     # the on_open event is called when a socket.io connection  is opened.
     # This is the place to initialize session variables
     def on_open(self, info):
-      print >> sys.stderr, "Connection Info", repr(info.__dict__)
+      print
+      print '-' * 79
+      print "%s: new connection from %s" % (datetime.datetime.now(), info.ip)
+      print
       self.config = { 'enabled': True }
 
-    @event
+    @cat_event
     # the on_close event is called when a socket.io connection is closed.
     # This is the place to delete session variables
     def on_close(self):
       del self.config
 
-    # PING
-    # echos time stamp
-    @event
+    @cat_event
     def ping(self, data):
-      print "called ping", data
       res = { 'data': data }
       self.emit('pingResult', res)
 
-    # GET SERVER CONFIG
-    # does not seem to be used by anything, so we just return 0
-    @event
+    @cat_event
     def getServerConfig(self):
-      print "called getServerConfig"
       res = { 'data' : 0 }
       self.emit('getServerConfigResult', res)
 
-    # CONFIGURE
-    @event
+    @cat_event
     def configure(self, data):
-      print "called configure", data
-      print "configure not implemented, request ignored"
+      print "configure not implemented"
 
-    # DECODE
-    @event
+    @cat_event
     def decode(self, data):
-      print "called decode", data
       res = request_translation_and_searchgraph(toutf8(data[u'source']))
       self.emit('decodeResult', res)
 
-    # START SESSION
-    @event
+    @cat_event
     def startSession(self, data):
-      print "called startSession", data
       res = { 'errors' : [],
               'data': [] }
       self.emit('startSessionResult', res)
 
-
-    # REJECT SUFFIX
-    @event
+    @cat_event
     def rejectSuffix(self, data):
-      print "called rejectSuffix", data
-      print "rejectSuffix not implemented, request ignored"
+      print "rejectSuffix not implemented"
 
-    # SET PREFIX
-    @event
+
+    @cat_event
     def setPrefix(self, data):
-      print "called setPrefix", data
       start_time = time.time()
       errors = []
       source = toutf8(data[u'source'])
       target = toutf8(data[u'target'])
       caretPos = data[u'caretPos']
-
       prefix = target[0:caretPos]
-      prefix = toutf8(prefix) # probably unnecessary
 
       try:
         # tokenize prefix (change of var name to "userInput" because "prefix" needs to be returned to the client)
-        pProcess  = request_to_server_py(prefix, action='tokenize')
+        pProcess  = request_to_server_py(prefix, action='tokenize', use_cache=True)
         userInput = pProcess[u'data'][u'translations'][0][u'tokenizedText']
         #truecase
-        pProcess  = request_to_server_py(toutf8(userInput), action='truecase')
+        pProcess  = request_to_server_py(toutf8(userInput), action='truecase', use_cache=True)
         userInput = pProcess[u'data'][u'translations'][0][u'truecasedText']
         userInput = toutf8(userInput)
       except:
@@ -296,35 +330,32 @@ class MinimalConnection(SocketConnection):
       # timeout?
       prediction = p.stdout.readline()
       p.kill()
-      ''' poll_obj = select.poll()
-      poll_obj.register(p.stdout, select.POLLIN)
-      t = 0
-      try:
-        while ((t < 4) and (prediction == '')):
-            if poll_obj.poll(0):
-                try:
-                    prediction = p.stdout.readline()
-                except Exception as e:
-                    print e
-            else:
-                time.sleep(1)
-                t += 1
-      except Exception as e:
-        errors.append(str(e)) '''
 
       if prediction:
+
+          # HACK - herve - not sure what happens here, but when the prefix is cut mid-word, sometimes words are repeated here. So
+          # we try to mitigate that, although I think the proper solution would have to be implemented in the "predict" binary.
+          prediction = prediction.lstrip()
+          print "prefix: %r prediction: %r" % (prefix, prediction)
+          for lookback in reversed (xrange(100)):
+            if lookback <= len(prefix) \
+                  and lookback <= len(prediction) \
+                  and prefix[-lookback:].lower() == prediction[:lookback].lower():
+                prediction = prediction[lookback:]
+                break
+
           # add prefix to ensure correct tokenization (esp. of opening/closing quotes).
           prediction = prefix + prediction
           #postprocessing
-          pProcess   = request_to_server_py(prediction, 'detokenize')
+          pProcess   = request_to_server_py(prediction, 'detokenize', use_cache=True)
           prediction = pProcess[u'data'][u'translations'][0][u'detokenizedText']
 
-          pProcess   = request_to_server_py(toutf8(prediction), 'detruecase')
+          pProcess   = request_to_server_py(toutf8(prediction), 'detruecase', use_cache=True)
           prediction = pProcess[u'data'][u'translations'][0][u'detruecasedText']
           prediction = toutf8(prediction)
 
       # call server and get relevant information from reponse
-      response = request_to_server_py(source, action='tokenize', target=prediction)
+      response = request_to_server_py(source, action='tokenize', target=prediction, use_cache=True)
       srcSpans = fix_span_mismatches(response[u'data'][u'tokenization'][u'src'])
       tgtSpans = fix_span_mismatches(response[u'data'][u'tokenization'][u'tgt'])
 
@@ -340,79 +371,59 @@ class MinimalConnection(SocketConnection):
                       } }
       self.emit('setPrefixResult', res)
 
-    # VALIDATE
-    @event
-    def Validate(self,data):
-      print "called Validate", data
-      print "Validate not implemented, request ignored"
 
-    # GET ALIGNMENTS
-    @event
+    @cat_event
+    def Validate(self,data):
+      print "Validate not implemented"
+
+
+    @cat_event
     def getAlignments(self, data):
-      print "called getAlignments", data
 
       # requires source and target text
       source = toutf8(data[u'source'])
       target = toutf8(data[u'target'])
 
       # call server and get relevant information from reponse
-      response = request_to_server_py(source, action='align', target=target)
-      srcSpans = fix_span_mismatches(response[u'data'][u'tokenization'][u'src'])
-      tgtSpans = fix_span_mismatches(response[u'data'][u'tokenization'][u'tgt'])
-
-      alignmentPoints = response[u'data'][u'alignment']
+      response = request_to_server_py(source, action='align', target=target, use_cache=True)
+      if response.get ('data'):
+        srcSpans = fix_span_mismatches(response[u'data'][u'tokenization'][u'src'])
+        tgtSpans = fix_span_mismatches(response[u'data'][u'tokenization'][u'tgt'])
+        alignmentPoints = response[u'data'][u'alignment']
+      else:
+        srcSpans = []
+        tgtSpans = []
+        alignmentPoints = []
 
       # process alignment points into matrix
       print "alignmentPoints ", alignmentPoints
       alignmentMatrix = [[0 for i in range(len(tgtSpans))] for j in range(len(srcSpans))]
       for point in alignmentPoints:
         alignmentMatrix[ point[0] ][ point[1] ] = 1
-      '''print "alignmentMatrix ", alignmentMatrix
-      print "source ", source
-      print "target ", target
-      print "sourceSegmentation ",  srcSpans
-      print "targetSegmentation ", tgtSpans'''
 
       errors = []
       res = { 'errors': errors,
               'data': {
-                    'source': source,
-                    'sourceSegmentation': srcSpans,
-                    'target': target,
-                    'targetSegmentation': tgtSpans,
-                    'alignments': alignmentMatrix
-                    } }
+          'source': source,
+          'sourceSegmentation': srcSpans,
+          'target': target,
+          'targetSegmentation': tgtSpans,
+          'alignments': alignmentMatrix
+          } }
       self.emit('getAlignmentsResult', res)
 
-    # GET TOKENS
-    @event
+
+    @cat_event
     def getTokens(self, data):
-      print "called getTokens", data
 
       # requires source and target text
       source = toutf8(data[u'source'])
       target = toutf8(data[u'target'])
 
       # call server and get relevant information from reponse
-      response = request_to_server_py(source, action='tokenize', target=target)
+      response = request_to_server_py(source, action='tokenize', target=target, use_cache=True)
       srcSpans = fix_span_mismatches(response[u'data'][u'tokenization'][u'src'])
       tgtSpans = fix_span_mismatches(response[u'data'][u'tokenization'][u'tgt'])
-
-      ''''# mismatch with span specifications, maybe should be changed in UI
-      for i in range(0, len(tgtSpans)):
-        if tgtSpans[i][1] is not None:
-          tgtSpans[i][1] += 1
-        elif i > 0:
-          tgtSpans[i] = [ tgtSpans[i-1][1], tgtSpans[i-1][1]+1 ]
-        else:
-          tgtSpans[i] = [0,0]
-      for i in range(0, len(srcSpans)):
-        if srcSpans[i][1] is not None:
-          srcSpans[i][1] += 1
-        elif i > 0:
-          srcSpans[i] = [ srcSpans[i-1][1], srcSpans[i-1][1]+1 ]
-        else:
-          srcSpans[i] = [0,0]'''
 
       errors = []
       res = { 'errors': errors,
@@ -424,28 +435,20 @@ class MinimalConnection(SocketConnection):
                     } }
       self.emit('getTokensResult', res)
 
-    # GET CONFIDENCES
-    @event
+    @cat_event
     def getConfidences(self, data):
-      print "called getConfidences", data
-      print "getConfidences not implemented, request ignored"
+      print "getConfidences not implemented"
 
-    # SET REPLACEMENT RULE
-    @event
+    @cat_event
     def setReplacementRule(self, data):
-      print "called setReplacementRule", data
-      print "setReplacementRule not implemented, request ignored"
+      print "setReplacementRule not implemented"
 
-    # GET VALIDATED CONTRIBUTIONS
-    @event
+    @cat_event
     def getValidatedContributions(self, data):
-      print "called getValidatedContributions", data
-      print "getValidatedContributions not implemented, request ignored"
+      print "getValidatedContributions not implemented"
 
-    # BICONCOR
-    @event
+    @cat_event
     def biconcor (self, data):
-      print "called biconcor", data
       lang_pair = 'en-de' # '%s-%s' % (data['srcLang'], data['tgtLang'])
       src_phrase = data['srcPhrase']
       biconcor_proc = biconcor_processes.get (lang_pair)
@@ -483,7 +486,7 @@ class RouterConnection(SocketConnection):
                     }
 
     def on_open(self, info):
-        print 'Router', repr(info)
+      pass
 
 
 # Create tornadio router
@@ -496,34 +499,19 @@ MinimalRouter = TornadioRouter(RouterConnection)
 if __name__ == "__main__":
 
     if len(sys.argv) == 1:
-      port = 8660
+      port = 7666
     elif len(sys.argv) == 2:
       port = int(sys.argv[1])
     else:
       print >> sys.stderr, "usage: %s [port]" % sys.argv[0]
       sys.exit(1)
 
-    LOG_FILENAME = '%s.catserver.log' %datetime.datetime.now().strftime("%Y%m%d-%H.%M.%S") # %H:%M:%S
+    LOG_FILENAME = '%s.catserver.log' %datetime.datetime.now().strftime("%Y%m%d-%H.%M.%S")
     logformat = '%(asctime)s %(thread)d - %(filename)s:%(lineno)s: %(message)s'
     logging.basicConfig(filename=LOG_FILENAME,level=logging.DEBUG,format=logformat)
 
-    # Create socket application
     application = web.Application(
-        MinimalRouter.apply_routes([
-                                      # Here you can add more handlers for
-                                      # traditional services,
-                                      # like a file or ajax server. See
-                                      # Tornado documentation for that
-                                      # (r"/", IndexHandler),
-                                      # (r"/js/(.*)", JsHandler),
-                                      # (r"/css/(.*)", CssHandler),
-                                      # (r"/examples/(.*)", ExampleHandler)
-                                    ]),
-        # if you want the flash transport to work you need to place the
-        # flashpolicy.xml and WebSocketMain.swf in the correct place (see docs)
-        #flash_policy_port = 843,
-        #flash_policy_file = os.path.join(ROOT, 'flashpolicy.xml'),
+        MinimalRouter.apply_routes([]),
         socket_io_port = port
     )
-    # Create and start tornadio server
     SocketServer(application)
