@@ -12,6 +12,7 @@ import hashlib
 import logging
 import os
 import re
+import signal
 import subprocess
 import sys
 import time
@@ -36,18 +37,13 @@ except:
 
 from biconcor import BiconcorProcess, parse_biconcor_output_into_json_struct
 
-
-
 ### global vars ###
-
 
 # root directory of the server
 ROOT = os.path.normpath(os.path.dirname(__file__))
 
-
 # BiconcorProcess objects, indexed by the language pair
 biconcor_processes = {}
-
 
 ### generic utils ###
 
@@ -69,14 +65,20 @@ def cat_event (func):
   return event (wrapper)
 
 
+class Alarm(Exception):
+    pass
+
+def alarm_handler(signum, frame):
+    """ used for timeout when calling subprocess """
+    raise Alarm
+
 def toutf8(string):
-  """ strings in python are unicode. We need to convert strings to uft8 before """
+  """ strings in python are unicode. We need to convert them to uft8 """
   return string.encode('utf-8')
 
 
 class MRUDict (collections.MutableMapping):
     """ Container class that acts as a dictionary but only remembers the K items that were last accessed """
-
     def __init__ (self, max_size, items=()):
         self.max_size = int (max_size)
         self.impl = collections.OrderedDict ()
@@ -123,7 +125,7 @@ searchGraph = MRUDict (1000)
 server_py_cache = MRUDict (1000)
 
 def request_to_server_py (text, action='translate', use_cache=False, target=''):
-  port = 7754  # server.py
+  port = 7954  # server.py
 
   if isinstance (text, unicode):
     text = text.encode ('UTF-8')
@@ -182,14 +184,13 @@ def request_to_server_py (text, action='translate', use_cache=False, target=''):
 
 
 def request_translation_and_searchgraph(source, returnTranslation = True):
-
     translation = request_to_server_py (source, use_cache=True)
     logging.debug('translation')
     logging.debug(translation)
     target = translation[u'data'][u'translations'][0][u'translatedText']
 
-    srcSpans = fix_span_mismatches(translation[u'data'][u'translations'][0][u'tokenization'][u'src']) #translation[u'data'][u'translations'][0][u'tokenization'][u'src'] #
-    tgtSpans = fix_span_mismatches(translation[u'data'][u'translations'][0][u'tokenization'][u'tgt']) #translation[u'data'][u'translations'][0][u'tokenization'][u'tgt'] #fix_span_mismatches(translation[u'data'][u'translations'][0][u'tokenization'][u'tgt'])
+    srcSpans = fix_span_mismatches(translation[u'data'][u'translations'][0][u'tokenization'][u'src'])
+    tgtSpans = fix_span_mismatches(translation[u'data'][u'translations'][0][u'tokenization'][u'tgt'])
 
     sg = translation[u'data'][u'translations'][0][u'searchGraph']
 
@@ -233,9 +234,8 @@ def fix_span_mismatches(spans):
     return spans
 
 
-# This class will handle our client/server API. Each function we would like to
-# exports needs to be decorated with the @cat_event decorator (see example below).
-
+"""This class will handle our client/server API. Each function we would like to
+    export needs to be decorated with the @event decorator (see example below)."""
 class MinimalConnection(SocketConnection):
 
     def emit (self, *args, **kwargs):
@@ -302,17 +302,15 @@ class MinimalConnection(SocketConnection):
       target = toutf8(data[u'target'])
       caretPos = data[u'caretPos']
       prefix = target[0:caretPos]
+      prefix = toutf8(prefix)
 
-      try:
-        # tokenize prefix (change of var name to "userInput" because "prefix" needs to be returned to the client)
-        pProcess  = request_to_server_py(prefix, action='tokenize', use_cache=True)
-        userInput = pProcess[u'data'][u'translations'][0][u'tokenizedText']
-        #truecase
-        pProcess  = request_to_server_py(toutf8(userInput), action='truecase', use_cache=True)
-        userInput = pProcess[u'data'][u'translations'][0][u'truecasedText']
-        userInput = toutf8(userInput)
-      except:
-        userInput = prefix
+      # tokenize prefix (change of var name to "userInput" because "prefix" needs to be returned to the client)
+      pProcess  = request_to_server_py('', action='tokenize', target=prefix)
+      userInput = pProcess[u'data'][u'tokenizedTarget']
+      #truecase
+      pProcess  = request_to_server_py(toutf8(userInput), action='truecase')
+      userInput = pProcess[u'data'][u'translations'][0][u'truecasedText']
+      userInput = toutf8(userInput)
 
       sgId = hashlib.sha224(source).hexdigest()
       if searchGraph.get(sgId) is None:
@@ -321,15 +319,28 @@ class MinimalConnection(SocketConnection):
 
       logging.debug("calling prediction binary")
       prediction = ''
-      p = subprocess.Popen('./predict', stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, preexec_fn = lambda: os.nice(10),)
+      try:
+          p = subprocess.Popen('./predict', stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, preexec_fn = lambda: os.nice(10),)
 
-      p.stdin.write(searchGraph[sgId])
-      p.stdin.flush()
-      p.stdin.write(userInput+'\n')
-      p.stdin.flush()
-      # timeout?
-      prediction = p.stdout.readline()
-      p.kill()
+          p.stdin.write(searchGraph[sgId])
+          p.stdin.flush()
+          p.stdin.write(userInput+'\n')
+          p.stdin.flush()
+
+          """ timeout """
+          signal.signal(signal.SIGALRM, alarm_handler)
+          signal.alarm(11)  # 11"
+
+          try:
+            prediction, error =  p.communicate()
+            signal.alarm(0)  # reset the alarm
+          except Alarm:
+            p.kill()
+            p.wait()
+      except:
+        logging.debug("subprocess error")
+        '''prediction = p.stdout.readline()
+          p.kill()'''
 
       if prediction:
 
@@ -371,7 +382,17 @@ class MinimalConnection(SocketConnection):
                       } }
       self.emit('setPrefixResult', res)
 
-
+    # Validates source-target pair
+    """ @param {Object}
+    * @setup obj
+    *   source {String}
+    *   target {String}
+    * @trigger validateResult
+    * @return {Object}
+    *   errors {Array} List of error messages
+    *   data {Object}
+    *   @setup data
+    *     elapsedTime {Number} ms """
     @cat_event
     def Validate(self,data):
       print "Validate not implemented"
@@ -435,14 +456,122 @@ class MinimalConnection(SocketConnection):
                     } }
       self.emit('getTokensResult', res)
 
+
+    # Retrieves confidence results for the current segment
+    """ @param {Object}
+    * @setup obj
+    *   source {String}
+    *   target {String}
+    *   validatedTokens {Array} List of Booleans, where 1 indicates that the token is validated
+    * @trigger getConfidencesResult
+    * @return {Object}
+    *   errors {Array} List of error messages
+    *   data {Object}
+    *   @setup data
+    *     quality {Number} Quality measure of overall hypothesis
+    *     confidences {Array} List of floats for each token
+    *     source {String} Verified source
+    *     sourceSegmentation {Array} Verified source segmentation
+    *     target {String} Result
+    *     targetSegmentation {Array}
+    *     elapsedTime {Number} ms
+    """
     @cat_event
     def getConfidences(self, data):
       print "getConfidences not implemented"
 
+    """ Adds a replacement rule.
+    * @param {Object}
+    * @setup obj
+    *   [ruleId] {Number}
+    *   sourceRule {String}
+    *   targetRule {String}
+    *   targetReplacement {String}
+    *   matchCase {Boolean}
+    *   isRegExp {Boolean}
+    *   persistent {Boolean} TODO
+    * @trigger setReplacementRuleResult
+    * @return {Object}
+    *   errors {Array} List of error messages
+    *   data {Object}
+    *   @setup data
+    *     elapsedTime {Number} ms
+    *     ruleId {Number} ruleId of the rule
+    """
     @cat_event
     def setReplacementRule(self, data):
       print "setReplacementRule not implemented"
 
+    # GET REPLACEMENT RULE - Returns the list of rules
+    """
+    * @trigger getReplacementRulesResult
+    * @return {Object}
+    *   errors {Array} List of error messages
+    *   data {Object}
+    *   @setup data
+    *     elapsedTime {Number} ms
+    *     rules {Array} List of rules
+    *     @setup rules
+    *       ruleId {Number}
+    *       sourceRule {String}
+    *       targetRule {String}
+    *       targetReplacement {String}
+    *       isRegExp {Boolean}
+    *       matchCase {Boolean}
+    *       nFails {Number} Number of times the regex provoked an exception
+    *       persistent {Boolean} TODO
+    """
+    @cat_event
+    def getReplacementRule(self, data):
+      print "called getReplacementRule", data
+      print "getReplacementRule not implemented, request ignored"
+
+    # Deletes replacement rule
+    """ @param {Object}
+    * @setup obj
+    *   ruleId {Number}
+    * @trigger delReplacementRuleResult
+    * @return {Object}
+    *   errors {Array} List of error messages
+    *   data {Object}
+    *   @setup data
+    *     elapsedTime {Number} ms
+    """
+    @cat_event
+    def delReplacementRule(self, data):
+      print "called setReplacementRule", data
+      print "delReplacementRule not implemented, request ignored"
+
+    # Applies *all* replacement rules, so that the user does not need to type for an entered rule to become visible.
+    """ @param {Object}
+    * @setup obj
+    *   source {String}
+    *   target {String}
+    * @trigger applyReplacementRulesResult
+    * @return {Object}
+    *   errors {Array} List of error messages
+    *   data {Object}
+    *   @setup data
+    *     elapsedTime {Number} ms
+    """
+    @cat_event
+    def applyReplacementRule(self, data):
+      print "called setReplacementRule", data
+      print "applyReplacementRule not implemented, request ignored"
+
+
+    # Retrieves contributions that users completed after full supervision
+    """ * @trigger getValidatedContributionsResult
+    * @return {Object}
+    *   errors {Array} List of error messages
+    *   data {Object}
+    *   @setup data
+    *     contributions {Array} List of validated contributions
+    *     @setup contributions
+    *       source {String} Validated source
+    *       target {String} Validated target
+    *     elapsedTime {Number} ms
+    """
     @cat_event
     def getValidatedContributions(self, data):
       print "getValidatedContributions not implemented"
@@ -491,8 +620,6 @@ class RouterConnection(SocketConnection):
 
 # Create tornadio router
 MinimalRouter = TornadioRouter(RouterConnection)
-
-
 
 ### cmd-line parsing and server init ###
 

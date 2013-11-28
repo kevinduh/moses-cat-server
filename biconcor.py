@@ -19,7 +19,7 @@ import time
 # constants
 
 MAX_TRANSLATIONS = 10
-MAX_EXAMPLES_PER_TRANS = 8
+MAX_EXAMPLES_PER_TRANS = 4
 
 #----------------------------------------------------------------------------------------------------------------------------------
 

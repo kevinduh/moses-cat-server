@@ -5,3 +5,6 @@ predict
 
 # tmp files
 sg.csv
+
+# 2013-11-27 - herve
+*.catserver.log
