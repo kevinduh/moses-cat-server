@@ -166,35 +166,24 @@ int main()
 		{
 			nextState = getStatePosition(hypKey, hypKey.size(), states[b.back_state].forward); 
 		}
-		// Matched prefix
-		int state = b.back_state;
-		int matched = b.back_matched;
 
-		string prefixString;
-		while( state > 0 ) {
-			for( backIter priorBack = states[state].back.begin(); priorBack != states[state].back.end(); priorBack++ ) {
-				if (priorBack->matched == matched) {
-					for(int i=priorBack->output.size();i!=0 ;i--) {
-						prefixString += surface[ priorBack->output[i-1]] + ' ';
-					}
-					state = priorBack->back_state;
-					matched = priorBack->back_matched;
-					break;
-				}
-			}
-		} 
-		
+		string partialMatch;
 		bool skip = true;
+		bool addSpace = false;
 		vector <string> frwOutput;
 		while (nextState  > 0)
 		{	
 			if (skip)  //start output from 2nd state
 			{
 				skip = false;
+				if (states[nextState].foutput.size() > 1)
+				{ addSpace = true; }
+				
 				for(int i=0;i<states[nextState].foutput.size();i++) 
 				{
-					prefixString  += surface[ states[nextState].foutput[i]] + ' ';
+					partialMatch  += surface[ states[nextState].foutput[i]] + ' ';
 				}
+				//cout << "##" << partialMatch << "##";
 			} else { 
 				for(int i=0;i<states[nextState].foutput.size();i++) 
 				{
@@ -204,17 +193,48 @@ int main()
 			nextState = getStatePosition(hypKey, hypKey.size(), states[nextState].forward);
 		}
 		
-		string lWord = surface[last_token];
-		transform(lWord.begin(), lWord.end(), lWord.begin(), (int(*)(int))std::tolower);
-		int matchedSize = tokenize(prefixString).size();
-		if ( matchedSize > 5)
-			lWord = ' '+ lWord;
-		unsigned found = prefixString.rfind(lWord); 
-		
-		if ( found != std::string::npos && found < prefixString.size()) // && (matchedSize/2 < found || matchedSize < 4) )
+		string lastUserToken = surface[last_token];
+		string leftSpaceUserToken;
+		string rightSpaceUserToken;
+		std::transform(lastUserToken.begin(), lastUserToken.end(), lastUserToken.begin(), ::tolower);
+		string partialMatchToLower = partialMatch;
+		std::transform(partialMatchToLower.begin(), partialMatchToLower.end(), partialMatchToLower.begin(), ::tolower);
+		/*if (addSpace && prefix.size() > 1)
+			lastUserToken = ' ' + lastUserToken;*/
+		// not the most sophisticated way to solve this..	we want to check for right/left word boundaries.
+		// 3 attempts to match partial state
+		bool continueSearching = true;
+		if (addSpace)
 		{
-			printf("%s",prefixString.substr(found+ lWord.size()).c_str());
+			// start with space on left of user input
+			leftSpaceUserToken = ' ' + lastUserToken;
+			unsigned found = partialMatchToLower.find(leftSpaceUserToken);
+			if ( found != std::string::npos && found < partialMatchToLower.size()) 
+			{
+				continueSearching = false;
+				printf("%s",partialMatch.substr(found+ leftSpaceUserToken.size()).c_str()); // partialMatch is case sensitive
+			} else {
+				rightSpaceUserToken = lastUserToken + ' ';
+				unsigned found = partialMatchToLower.find(rightSpaceUserToken);
+				if ( found != std::string::npos && found < partialMatchToLower.size()) 
+				{
+					continueSearching = false;
+					printf("%s",partialMatch.substr(found+ lastUserToken.size()).c_str()); // partialMatch is case sensitive
+				}
+			}	
+		} 
+		if (continueSearching)
+		{
+			unsigned found = partialMatchToLower.find(lastUserToken); //rfind(lastUserToken);
+			/*cout << "PARTIAL:" << partialMatch;
+			cout << "PREFIX:" << lastUserToken;
+			cout << "#";*/
+			if ( found != std::string::npos && found < partialMatchToLower.size()) 
+			{
+				printf("%s",partialMatch.substr(found+ lastUserToken.size()).c_str()); // partialMatch is case sensitive
+			}
 		}
+
 		//print rest of prediction
 		for(int it = 0 ; it != frwOutput.size(); ++it)
 		{
