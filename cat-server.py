@@ -306,7 +306,7 @@ class MinimalConnection(SocketConnection):
       start_time = time.time()
       errors = []
       source = toutf8(data[u'source'])
-      target = toutf8(data[u'target'])
+      target = data[u'target'] # don't convert to utf8, it will complain after toutf8(prefix)
       caretPos = data[u'caretPos']
       prefix = target[0:caretPos]
       prefix = toutf8(prefix)
