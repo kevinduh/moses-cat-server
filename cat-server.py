@@ -10,6 +10,7 @@ import datetime
 import functools
 import hashlib
 import logging
+import operator
 import os
 import re
 import signal
@@ -183,7 +184,7 @@ def request_to_server_py (text, action='translate', use_cache=False, target=''):
   return copy.deepcopy (output_struct)
 
 
-def request_translation_and_searchgraph(source, returnTranslation = True):
+def request_translation_and_searchgraph(source, returnTranslation = True, returnOptions = True):
     translation = request_to_server_py (source, use_cache=True)
     logging.debug('translation')
     logging.debug(translation)
@@ -214,15 +215,14 @@ def request_translation_and_searchgraph(source, returnTranslation = True):
     output.close()
 
     """ translation options """
-    tOptions = []
-    toptResponse = translation[u'data'][u'translations'][0][u'topt']
-    for row in toptResponse:
-        print row['phrase'], row['start'], row['end'], row['fscore']
+    tOptions = {}
+    if returnOptions:
+        tOptions = process_options(source, translation[u'data'][u'translations'][0][u'topt'], 10) # source sentence, options, max_level size
 
     if returnTranslation:
        # needs to have >1 translations
         res = { 'errors' : [],
-    		  'data': { 'source': source, 'sourceSegmentation' : srcSpans,
+    		  'data': { 'source': source, 'sourceSegmentation' : srcSpans, 'options' : tOptions,
                             'nbest': ( { 'target': target , 'targetSegmentation': tgtSpans } ,
                                        { 'target': target , 'targetSegmentation': tgtSpans }
                                      )
@@ -240,6 +240,72 @@ def fix_span_mismatches(spans):
           spans[i] = [0,0]
     return spans
 
+""" process Translation Options. Same implementation as in Caitra
+Sentence: already tokenized source sentence
+Options: in JSON format, as receieved from server.py  """
+def process_options(sentence, options, max_level):
+  # init future cost spans
+  cost = {}
+  # TODO: edit server.py to return tokenizedSource by default (during decoding)
+  pProcess  = request_to_server_py(sentence, action='tokenize')
+  sentence = pProcess[u'data'][u'tokenizedSource']
+  words = sentence.split(' ')
+  wordsLength = len(words)
+
+  for start in range(0,wordsLength+1):
+    for end in range(start, wordsLength+1):
+        cost[(start, end)] = -100 * (1+end-start)
+
+  # get cheapest costs from options
+  for option in options:
+        start = option['start']
+        end = option['end']
+        fscore = option['fscore']
+        cost[(start, end)] = fscore if (cost[(start, end)] < fscore) else cost[(start, end)]
+
+
+  # get cheapest (binary) combination   (range -1 or as is?)
+  for size in range(1, wordsLength-1):
+    for start in range(0, wordsLength - size -1):
+        cheapest = cost[(start, start+size-1)]
+        for middle in range(1, size - 1):
+            combined = cost[(start, start+middle-1)] + cost[(start+middle, start+size-1)]
+            if combined > cheapest:
+                cheapest = combined
+
+        cost[(start,start+size-1)] = cheapest;
+  path_cost = cost[(0,wordsLength-1)]
+
+  # include future cost estimate in full cost of each option
+  for option in options:
+    start = option['start']
+    end = option['end']
+    option['full_cost'] = option['fscore'] - path_cost
+    option['full_cost'] += cost[(0, start-1)] if (start > 0) else 0
+    option['full_cost'] += cost[(end+1, wordsLength-1)] if (end+1 < wordsLength) else 0
+    del option['fscore'] # remove unnecessary items from the dict
+    del option['scores']
+
+  # compute level for each option
+  filled = [-1] * (wordsLength-1)
+
+  # sort options by full cost
+  options.sort(key=lambda options: options['full_cost'], reverse=True)
+
+  for sorted_option in options:
+    level = 0
+
+    for i in range(sorted_option['start'], sorted_option['end']):
+        level = filled[i]+1 if filled[i]+1 > level else level
+    for i in range(sorted_option['start'], sorted_option['end']):
+        filled[i] = level
+
+    if level > max_level:
+        del sorted_option # we want to get rid of some of the options
+    else:
+        sorted_option['level'] = level
+
+  return options
 
 """This class will handle our client/server API. Each function we would like to
     export needs to be decorated with the @event decorator (see example below)."""
@@ -322,7 +388,7 @@ class MinimalConnection(SocketConnection):
       sgId = hashlib.sha224(source).hexdigest()
       if searchGraph.get(sgId) is None:
         logging.debug('request searchgraph')
-        request_translation_and_searchgraph(source, returnTranslation = False)
+        request_translation_and_searchgraph(source, returnTranslation = False, returnOptions = False)
 
       logging.debug("calling prediction binary")
       prediction = ''
@@ -395,7 +461,6 @@ class MinimalConnection(SocketConnection):
 
     @cat_event
     def getAlignments(self, data):
-
       # requires source and target text
       source = toutf8(data[u'source'])
       target = toutf8(data[u'target'])
