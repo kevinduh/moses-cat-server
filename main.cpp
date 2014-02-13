@@ -166,24 +166,19 @@ int main()
 		{
 			nextState = getStatePosition(hypKey, hypKey.size(), states[b.back_state].forward); 
 		}
-
 		string partialMatch;
-		bool skip = true;
-		bool addSpace = false;
+		
+		bool firstIter = true;
 		vector <string> frwOutput;
 		while (nextState  > 0)
 		{	
-			if (skip)  //start output from 2nd state
+			if (firstIter)  //start output from 2nd state
 			{
-				skip = false;
-				if (states[nextState].foutput.size() > 1)
-				{ addSpace = true; }
-				
+				firstIter = false;		
 				for(int i=0;i<states[nextState].foutput.size();i++) 
 				{
-					partialMatch  += surface[ states[nextState].foutput[i]] + ' ';
+					partialMatch  += surface[states[nextState].foutput[i]] + ' ';
 				}
-				//cout << "##" << partialMatch << "##";
 			} else { 
 				for(int i=0;i<states[nextState].foutput.size();i++) 
 				{
@@ -192,51 +187,40 @@ int main()
 			}
 			nextState = getStatePosition(hypKey, hypKey.size(), states[nextState].forward);
 		}
-		
-		string lastUserToken = surface[last_token];
-		string leftSpaceUserToken;
-		string rightSpaceUserToken;
+		// match last token to the partial match or first predicted word
+		string lastUserToken = ' '+ surface[last_token]; // add word boundary to the left
+		// prepare case insensitive search
 		std::transform(lastUserToken.begin(), lastUserToken.end(), lastUserToken.begin(), ::tolower);
-		string partialMatchToLower = partialMatch;
+		string partialMatchToLower = ' ' + partialMatch;
 		std::transform(partialMatchToLower.begin(), partialMatchToLower.end(), partialMatchToLower.begin(), ::tolower);
-		/*if (addSpace && prefix.size() > 1)
-			lastUserToken = ' ' + lastUserToken;*/
-		// not the most sophisticated way to solve this..	we want to check for right/left word boundaries.
-		// 3 attempts to match partial state
+		/*cout << "##" << partialMatchToLower << "##";
+		cout << "##" << lastUserToken << "##";*/
 		bool continueSearching = true;
-		if (addSpace)
+		unsigned found = partialMatchToLower.find(lastUserToken);
+		if ( found != std::string::npos && found < partialMatchToLower.size()) 
 		{
-			// start with space on left of user input
-			leftSpaceUserToken = ' ' + lastUserToken;
-			unsigned found = partialMatchToLower.find(leftSpaceUserToken);
-			if ( found != std::string::npos && found < partialMatchToLower.size()) 
-			{
-				continueSearching = false;
-				printf("%s",partialMatch.substr(found+ leftSpaceUserToken.size()).c_str()); // partialMatch is case sensitive
-			} else {
-				rightSpaceUserToken = lastUserToken + ' ';
-				unsigned found = partialMatchToLower.find(rightSpaceUserToken);
+			continueSearching = false;
+			printf("%s",partialMatch.substr(found+ lastUserToken.size() -1).c_str()); // partialMatch is case sensitive (1 is because of the extra space)
+		} 
+		
+		int initIt = 0;
+		if (continueSearching) // check the first next state output as well
+		{
+			if (frwOutput.size() > 1){ 
+				partialMatch = frwOutput[0];
+				string partialMatchToLower = ' ' + partialMatch;
+				std::transform(partialMatchToLower.begin(), partialMatchToLower.end(), partialMatchToLower.begin(), ::tolower);
+				//cout << "##" << partialMatchToLower << "##";
+				unsigned found = partialMatchToLower.find(lastUserToken);
 				if ( found != std::string::npos && found < partialMatchToLower.size()) 
 				{
-					continueSearching = false;
-					printf("%s",partialMatch.substr(found+ lastUserToken.size()).c_str()); // partialMatch is case sensitive
-				}
-			}	
-		} 
-		if (continueSearching)
-		{
-			unsigned found = partialMatchToLower.find(lastUserToken); //rfind(lastUserToken);
-			/*cout << "PARTIAL:" << partialMatch;
-			cout << "PREFIX:" << lastUserToken;
-			cout << "#";*/
-			if ( found != std::string::npos && found < partialMatchToLower.size()) 
-			{
-				printf("%s",partialMatch.substr(found+ lastUserToken.size()).c_str()); // partialMatch is case sensitive
+					initIt = 1; // do not print it again
+					printf("%s",partialMatch.substr(found+ lastUserToken.size()-1).c_str()); // (1 is because of the extra space)
+				} 
 			}
 		}
-
 		//print rest of prediction
-		for(int it = 0 ; it != frwOutput.size(); ++it)
+		for(int it = initIt ; it != frwOutput.size(); ++it)
 		{
 			printf(" %s",frwOutput[it].c_str());
 		} 
