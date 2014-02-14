@@ -157,17 +157,14 @@ int main()
 		
 		vector<string> matchedOutput;
 		Best &b = best[errorAllowed];
-		int nextState = 1;
+		int nextState;
 		if (b.transition > 0) {
-			nextState = b.transition;
-		} else if (b.state > 0) {
+			nextState = b.transition; // partial match
+		} else { // if (b.state > 0) {
 			nextState = b.state;
-		} else if (b.back_state > 0 )
-		{
-			nextState = getStatePosition(hypKey, hypKey.size(), states[b.back_state].forward); 
 		}
-		string partialMatch;
 		
+		string partialMatch;
 		bool firstIter = true;
 		vector <string> frwOutput;
 		while (nextState  > 0)
