@@ -126,7 +126,7 @@ translationOptions = MRUDict(1000)
 server_py_cache = MRUDict (1000)
 
 def request_to_server_py (text, action='translate', use_cache=False, target=''):
-  port = 8644 # en-es #7954  # server.py
+  port = 8644 # 8730 en-de OR 8644 en-es # server.py 
 
   if isinstance (text, unicode):
     text = text.encode ('UTF-8')
@@ -252,6 +252,11 @@ def process_options(sentence, options, max_level):
   words = sentence.split(' ')
   wordsLength = len(words)
 
+  with open('options_before','w') as thefile:
+    for option in options:
+      thefile.write("%s\n" % option)
+      
+      
   for start in range(0,wordsLength+1):
     for end in range(start, wordsLength+1):
         cost[(start, end)] = -100 * (1+end-start)
@@ -287,25 +292,25 @@ def process_options(sentence, options, max_level):
     del option['scores']
 
   # compute level for each option
-  filled = [-1] * (wordsLength-1)
+  filled = [-1] * wordsLength
 
   # sort options by full cost
   options.sort(key=lambda options: options['full_cost'], reverse=True)
-
-  for sorted_option in options:
+  options.sort(key=lambda options: options['start'])
+  filtered_options = [] # to keep only options that have level < max_level
+  for k in xrange(len(options)):
     level = 0
+    for i in range(options[k]['start'], options[k]['end']+1):
+      if filled[i]+1 > level:
+	level = filled[i]+1
+    for i in range(options[k]['start'], options[k]['end']+1):
+      filled[i] = level
 
-    for i in range(sorted_option['start'], sorted_option['end']):
-        level = filled[i]+1 if filled[i]+1 > level else level
-    for i in range(sorted_option['start'], sorted_option['end']):
-        filled[i] = level
-
-    if level > max_level:
-        del sorted_option # we want to get rid of some of the options
-    else:
-        sorted_option['level'] = level
-
-  return options
+    options[k]['level'] = level
+    if level <= max_level:
+      filtered_options.append(options[k])  # we want to get rid of some of the options
+      
+  return filtered_options
 
 """This class will handle our client/server API. Each function we would like to
     export needs to be decorated with the @event decorator (see example below)."""
