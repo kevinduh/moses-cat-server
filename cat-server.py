@@ -251,12 +251,7 @@ def process_options(sentence, options, max_level):
   sentence = pProcess[u'data'][u'tokenizedSource']
   words = sentence.split(' ')
   wordsLength = len(words)
-
-  with open('options_before','w') as thefile:
-    for option in options:
-      thefile.write("%s\n" % option)
-      
-      
+  
   for start in range(0,wordsLength+1):
     for end in range(start, wordsLength+1):
         cost[(start, end)] = -100 * (1+end-start)
