@@ -120,13 +120,15 @@ class MRUDict (collections.MutableMapping):
 ### Cached searchgraphs (index: source sentence. Remember to include language pair later)
 searchGraph = MRUDict (1000)
 translationOptions = MRUDict(1000)
+predictProcess = MRUDict(1000)
+
 ### connection to server.py ###
 
 # should this be per-connection?
 server_py_cache = MRUDict (1000)
 
 def request_to_server_py (text, action='translate', use_cache=False, target=''):
-  port = 8644 # en-es #7954  # server.py
+  port = 8730 # en-es #7954  # server.py
 
   if isinstance (text, unicode):
     text = text.encode ('UTF-8')
@@ -145,7 +147,7 @@ def request_to_server_py (text, action='translate', use_cache=False, target=''):
   elif action == 'align' or action == 'tokenize':
     params = '&t=%s' % urllib.quote_plus(target)
 
-  url = 'http://127.0.0.1:%d/%s?%s' % (
+  url = 'http://bragi:%d/%s?%s' % (
     port,
     action,
     'q=%s' % urllib.quote_plus(text) + params,
@@ -392,28 +394,42 @@ class MinimalConnection(SocketConnection):
 
       logging.debug("calling prediction binary")
       prediction = ''
-      try:
-          p = subprocess.Popen('./predict', stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, preexec_fn = lambda: os.nice(10),)
+      if predictProcess.get(sgId) is None:
+        logging.debug('creating a new prediction process')
+        try:
+            p = subprocess.Popen(['./predict.desparationC','-W','-s','3','3','-t','0.4','-f','5','-m','0.1'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, preexec_fn = lambda: os.nice(10),)
 
-          p.stdin.write(searchGraph[sgId])
-          p.stdin.flush()
-          p.stdin.write(userInput+'\n')
-          p.stdin.flush()
+            p.stdin.write(searchGraph[sgId])
+            p.stdin.flush()
+	    predictProcess[ sgId ] = p
+        except:
+            logging.debug("could not create prediction process")
+      try:
+          predictProcess[ sgId ].stdin.write(userInput+'\n')
+          predictProcess[ sgId ].stdin.flush()
 
           """ timeout """
           signal.signal(signal.SIGALRM, alarm_handler)
           signal.alarm(11)  # 11"
 
           try:
-            prediction, error =  p.communicate()
+            prediction = predictProcess[ sgId ].stdout.readline()
+            """ prediction, error =  p.communicate() """
             signal.alarm(0)  # reset the alarm
           except Alarm:
-            p.kill()
-            p.wait()
+	    logging.debug("interaction with predict binary failed")
+            predictProcess[ sgId ].kill()
+            predictProcess[ sgId ].wait()
+            del predictProcess[ sgId ]
       except:
         logging.debug("subprocess error")
+	predictProcess[ sgId ].kill()
+	predictProcess[ sgId ].wait()
+	del predictProcess[ sgId ]
         '''prediction = p.stdout.readline()
           p.kill()'''
+
+      logging.debug("prediction for prefix '" + prefix + "' is '" + prediction + "'")
 
       if prediction:
           # add prefix to ensure correct tokenization (esp. of opening/closing quotes).
@@ -686,7 +702,7 @@ MinimalRouter = TornadioRouter(RouterConnection)
 if __name__ == "__main__":
 
     if len(sys.argv) == 1:
-      port = 7666
+      port = 9977
     elif len(sys.argv) == 2:
       port = int(sys.argv[1])
     else:
