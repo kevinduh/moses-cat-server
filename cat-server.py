@@ -128,7 +128,10 @@ predictProcess = MRUDict(1000)
 server_py_cache = MRUDict (1000)
 
 def request_to_server_py (text, action='translate', use_cache=False, target=''):
-  port = 8730 # en-es #7954  # server.py
+  
+  # where to find server.py
+  host,port = ('127.0.0.1', 8644) # en-es
+  #host,port = ('bragi',9831)     # en-de 8730, en-fr 9831
 
   if isinstance (text, unicode):
     text = text.encode ('UTF-8')
@@ -147,11 +150,12 @@ def request_to_server_py (text, action='translate', use_cache=False, target=''):
   elif action == 'align' or action == 'tokenize':
     params = '&t=%s' % urllib.quote_plus(target)
 
-  url = 'http://bragi:%d/%s?%s' % (
+  url = 'http://%s:%d/%s?%s' % (
+    host,
     port,
     action,
     'q=%s' % urllib.quote_plus(text) + params,
-    )
+  )
   logging.debug(url)
 
   missing = object()
@@ -219,7 +223,7 @@ def request_translation_and_searchgraph(source, returnTranslation = True, return
     """ translation options """
     tOptions = {}
     if returnOptions:
-        tOptions = process_options(source, translation[u'data'][u'translations'][0][u'topt'], 10) # source sentence, options, max_level size
+        tOptions = process_options(source, translation[u'data'][u'translations'][0][u'topt'], 5) # source sentence, options, max_level size
 
     if returnTranslation:
        # needs to have >1 translations
@@ -254,8 +258,8 @@ def process_options(sentence, options, max_level):
   words = sentence.split(' ')
   wordsLength = len(words)
   
-  for start in range(0,wordsLength+1):
-    for end in range(start, wordsLength+1):
+  for start in range(0,wordsLength):
+    for end in range(start, wordsLength):
         cost[(start, end)] = -100 * (1+end-start)
 
   # get cheapest costs from options
@@ -263,19 +267,20 @@ def process_options(sentence, options, max_level):
         start = option['start']
         end = option['end']
         fscore = option['fscore']
-        cost[(start, end)] = fscore if (cost[(start, end)] < fscore) else cost[(start, end)]
+        if (cost[(start, end)] < fscore):
+	  cost[(start, end)] = fscore
 
 
-  # get cheapest (binary) combination   (range -1 or as is?)
-  for size in range(1, wordsLength-1):
-    for start in range(0, wordsLength - size -1):
+  # get cheapest (binary) combination
+  for size in range(1, wordsLength+1):
+    for start in range(0, wordsLength - size +1):
         cheapest = cost[(start, start+size-1)]
-        for middle in range(1, size - 1):
+        for middle in range(1, size):
             combined = cost[(start, start+middle-1)] + cost[(start+middle, start+size-1)]
             if combined > cheapest:
                 cheapest = combined
 
-        cost[(start,start+size-1)] = cheapest;
+        cost[(start,start+size-1)] = cheapest
   path_cost = cost[(0,wordsLength-1)]
 
   # include future cost estimate in full cost of each option
@@ -283,8 +288,10 @@ def process_options(sentence, options, max_level):
     start = option['start']
     end = option['end']
     option['full_cost'] = option['fscore'] - path_cost
-    option['full_cost'] += cost[(0, start-1)] if (start > 0) else 0
-    option['full_cost'] += cost[(end+1, wordsLength-1)] if (end+1 < wordsLength) else 0
+    if start > 0:
+      option['full_cost'] += cost[(0, start-1)]
+    if (end+1 < wordsLength):
+      option['full_cost'] += cost[(end+1, wordsLength-1)]
     del option['fscore'] # remove unnecessary items from the dict
     del option['scores']
 
@@ -300,12 +307,13 @@ def process_options(sentence, options, max_level):
     for i in range(options[k]['start'], options[k]['end']+1):
       if filled[i]+1 > level:
 	level = filled[i]+1
-    for i in range(options[k]['start'], options[k]['end']+1):
-      filled[i] = level
-
-    options[k]['level'] = level
-    if level <= max_level:
-      filtered_options.append(options[k])  # we want to get rid of some of the options
+	
+    if level <= max_level: # we want to get rid of some of the options
+      for i in range(options[k]['start'], options[k]['end']+1):
+	filled[i] = level
+	
+      options[k]['level'] = level
+      filtered_options.append(options[k])
       
   return filtered_options
 
@@ -397,7 +405,7 @@ class MinimalConnection(SocketConnection):
       if predictProcess.get(sgId) is None:
         logging.debug('creating a new prediction process')
         try:
-            p = subprocess.Popen(['./predict.desparationC','-W','-s','3','3','-t','0.4','-f','5','-m','0.1'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, preexec_fn = lambda: os.nice(10),)
+            p = subprocess.Popen(['./predict','-W','-s','3','3','-t','0.4','-f','5','-m','0.1'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, preexec_fn = lambda: os.nice(10),)
 
             p.stdin.write(searchGraph[sgId])
             p.stdin.flush()
