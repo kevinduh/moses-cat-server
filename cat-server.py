@@ -270,7 +270,6 @@ def process_options(sentence, options, max_level):
         if (cost[(start, end)] < fscore):
 	  cost[(start, end)] = fscore
 
-
   # get cheapest (binary) combination
   for size in range(1, wordsLength+1):
     for start in range(0, wordsLength - size +1):
@@ -297,24 +296,27 @@ def process_options(sentence, options, max_level):
 
   # compute level for each option
   filled = [-1] * wordsLength
-
+      
   # sort options by full cost
   options.sort(key=lambda options: options['full_cost'], reverse=True)
-  options.sort(key=lambda options: options['start'])
   filtered_options = [] # to keep only options that have level < max_level
+  
   for k in xrange(len(options)):
     level = 0
+
     for i in range(options[k]['start'], options[k]['end']+1):
       if filled[i]+1 > level:
 	level = filled[i]+1
 	
     if level <= max_level: # we want to get rid of some of the options
       for i in range(options[k]['start'], options[k]['end']+1):
-	filled[i] = level
+	filled[i] = level # filled[i] +1 #
 	
       options[k]['level'] = level
       filtered_options.append(options[k])
-      
+  
+  filtered_options.sort(key=lambda filtered_options: filtered_options['start'])
+  
   return filtered_options
 
 """This class will handle our client/server API. Each function we would like to
