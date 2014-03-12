@@ -10,7 +10,6 @@ import datetime
 import functools
 import hashlib
 import logging
-import operator
 import os
 import re
 import signal
@@ -371,6 +370,8 @@ class MinimalConnection(SocketConnection):
     @cat_event
     def decode(self, data):
       res = request_translation_and_searchgraph(toutf8(data[u'source']))
+      res.get('data',{}).setdefault ('segId', data.get('segId'))
+      res.get('data',{}).setdefault ('isPreFetch', data.get('isPreFetch'))
       self.emit('decodeResult', res)
 
     @cat_event
@@ -667,13 +668,21 @@ class MinimalConnection(SocketConnection):
     def getValidatedContributions(self, data):
       print "getValidatedContributions not implemented"
 
-    @cat_event
-    def biconcor (self, data):
-      lang_pair = 'en-de' # '%s-%s' % (data['srcLang'], data['tgtLang'])
-      src_phrase = data['srcPhrase']
+    def _biconcor_proc (self, data):
+      lang_pair = 'en-da' #str('%s-%s' % (data['srcLang'].lower(), data['tgtLang'].lower()))
       biconcor_proc = biconcor_processes.get (lang_pair)
       if biconcor_proc is None:
         biconcor_proc = biconcor_processes[lang_pair] = BiconcorProcess (lang_pair)
+      return biconcor_proc
+
+    @cat_event
+    def biconcor (self, data):
+      try:
+        biconcor_proc = self._biconcor_proc (data)
+        src_phrase = data['srcPhrase']
+      except Exception, ex:
+        self.emit ('biconcorResult', {'errors':[str(ex)], 'data':{}})
+        return
       if not biconcor_proc.is_warm():
         self.emit ('biconcorResult', {
             'errors': [],
@@ -697,6 +706,10 @@ class MinimalConnection(SocketConnection):
             }
           })
 
+    @cat_event
+    def warmUpBiconcordancer (self, data):
+      self._biconcor_proc(data).warm_up()
+
 
 # We setup our connection handler. You can define different endpoints
 # for additional socket.io services.
@@ -717,7 +730,7 @@ MinimalRouter = TornadioRouter(RouterConnection)
 if __name__ == "__main__":
 
     if len(sys.argv) == 1:
-      port = 9977
+      port = 8666
     elif len(sys.argv) == 2:
       port = int(sys.argv[1])
     else:

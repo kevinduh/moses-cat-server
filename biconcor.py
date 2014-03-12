@@ -72,6 +72,16 @@ class BiconcorProcess (object):
             '--load', '/disk2/cat-models/wmt13-en-de/biconcor',
             '--stdio',
             ],
+        'fr-en': [
+            '/disk7/pkoehn/catserver/biconcor/biconcor',
+            '--load', '/disk2/cat-models/wmt13-fr-en.biconcor',
+            '--stdio',
+            ],
+        'en-da': [
+            '/disk7/pkoehn/catserver/biconcor/biconcor',
+            '--load', '/disk2/cat-models/casmacat-en-da/biconcor/biconcor.out',
+            '--stdio',
+            ],
         }
 
     def __init__ (self, lang_pair):
@@ -81,7 +91,12 @@ class BiconcorProcess (object):
                 '--examples', str(MAX_EXAMPLES_PER_TRANS),
                 ]
         except KeyError:
-            raise ValueError, "Concordancer is not configured for language pair %r" % lang_pair
+            raise ValueError (
+                "Concordancer is not configured for language pair %r. This is set in %s, variable BICONCOR_CMDS" % (
+                    lang_pair,
+                    re.sub (r'\.pyc$', '.py', __file__),
+                    )
+                )
         self.child = None
         self.killer = None
         self.child_lock = threading.Lock()
@@ -98,18 +113,19 @@ class BiconcorProcess (object):
 
     def warm_up (self):
         """ Blocks until we have a biconcor process running and ready to accept requests """
-        if not self.is_warm():
-            assert self.child is None, repr(self.child)
-            assert self.killer is None, repr(self.killer)
-            self.child = subprocess.Popen (
-                self.cmd,
-                stdin = subprocess.PIPE,
-                stdout = subprocess.PIPE,
-                preexec_fn = lambda: os.nice(10),
-                )
-            expect (self.child.stdout, '-|||- BICONCOR START -|||-')
-            self.killer = KillerThread (self.child)
-            self.killer.start()
+        with self.child_lock:
+            if not self.is_warm():
+                assert self.child is None, repr(self.child)
+                assert self.killer is None, repr(self.killer)
+                self.child = subprocess.Popen (
+                    self.cmd,
+                    stdin = subprocess.PIPE,
+                    stdout = subprocess.PIPE,
+                    preexec_fn = lambda: os.nice(10),
+                    )
+                expect (self.child.stdout, '-|||- BICONCOR START -|||-')
+                self.killer = KillerThread (self.child)
+                self.killer.start()
 
     def get_concordance (self, src_phrase):
         """
