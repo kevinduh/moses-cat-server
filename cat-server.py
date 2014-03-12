@@ -75,8 +75,12 @@ def alarm_handler(signum, frame):
 
 def toutf8(string):
   """ strings in python are unicode. We need to convert them to uft8 """
-  return string.encode('utf-8')
-
+  if not isinstance (string, basestring):
+    string = unicode (string)
+  if isinstance (string, unicode):
+    string = string.encode('utf-8')
+  assert isinstance(string,str), repr(string)
+  return string
 
 class MRUDict (collections.MutableMapping):
     """ Container class that acts as a dictionary but only remembers the K items that were last accessed """
@@ -130,7 +134,8 @@ server_py_cache = MRUDict (1000)
 def request_to_server_py (text, action='translate', use_cache=False, target=''):
   
   # where to find server.py
-  host,port = ('127.0.0.1', 8644) # en-es
+  #host,port = ('127.0.0.1', 8644) # en-es
+  host,port = ('tyr',8731) # en-dk
   #host,port = ('bragi',9831)     # en-de 8730, en-fr 9831
 
   if isinstance (text, unicode):
