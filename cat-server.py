@@ -46,6 +46,10 @@ ROOT = os.path.normpath(os.path.dirname(__file__))
 # BiconcorProcess objects, indexed by the language pair
 biconcor_processes = {}
 
+# Defaults for MT Server
+mt_port = 9000
+mt_host = 'localhost'
+
 ### generic utils ###
 
 def cat_event (func):
@@ -133,11 +137,6 @@ server_py_cache = MRUDict (1000)
 
 def request_to_server_py (text, action='translate', use_cache=False, target=''):
   
-  # where to find server.py
-  #host,port = ('127.0.0.1', 8644) # en-es
-  host,port = ('tyr',8731) # en-dk
-  #host,port = ('bragi',9831)     # en-de 8730, en-fr 9831
-
   if isinstance (text, unicode):
     text = text.encode ('UTF-8')
   if isinstance (target, unicode):
@@ -156,8 +155,8 @@ def request_to_server_py (text, action='translate', use_cache=False, target=''):
     params = '&t=%s' % urllib.quote_plus(target)
 
   url = 'http://%s:%d/%s?%s' % (
-    host,
-    port,
+    mt_host,
+    mt_port,
     action,
     'q=%s' % urllib.quote_plus(text) + params,
   )
@@ -715,14 +714,14 @@ MinimalRouter = TornadioRouter(RouterConnection)
 ### cmd-line parsing and server init ###
 
 if __name__ == "__main__":
-
-    if len(sys.argv) == 1:
-      port = 9977
-    elif len(sys.argv) == 2:
-      port = int(sys.argv[1])
-    else:
-      print >> sys.stderr, "usage: %s [port]" % sys.argv[0]
-      sys.exit(1)
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--port', help='server port to bind to, default: 9999', type=int, default=9999)
+    parser.add_argument('--mt-host', help='host of the mt server (server.py), default '+mt_host, default=mt_host)
+    parser.add_argument('--mt-port', help='port of the mt server (server.py), default '+str(mt_port), type=int, default=mt_port)
+    settings = parser.parse_args(sys.argv[1:])
+    mt_host = settings.mt_host
+    mt_port = settings.mt_port
 
     LOG_FILENAME = '%s.catserver.log' %datetime.datetime.now().strftime("%Y%m%d-%H.%M.%S")
     logformat = '%(asctime)s %(thread)d - %(filename)s:%(lineno)s: %(message)s'
@@ -730,6 +729,6 @@ if __name__ == "__main__":
 
     application = web.Application(
         MinimalRouter.apply_routes([]),
-        socket_io_port = port
+        socket_io_port = settings.port
     )
     SocketServer(application)
