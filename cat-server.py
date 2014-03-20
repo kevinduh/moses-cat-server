@@ -445,7 +445,7 @@ class MinimalConnection(SocketConnection):
           p.kill()'''
 
       logging.debug("prediction for prefix '" + prefix + "' is '" + prediction + "'")
-
+      res = {}
       if prediction:
           # add prefix to ensure correct tokenization (esp. of opening/closing quotes).
           prediction = prefix + prediction
@@ -456,22 +456,29 @@ class MinimalConnection(SocketConnection):
           pProcess   = request_to_server_py(toutf8(prediction), 'detruecase', use_cache=True)
           prediction = pProcess[u'data'][u'translations'][0][u'detruecasedText']
           prediction = toutf8(prediction)
-
-      # call server and get relevant information from reponse
-      response = request_to_server_py(source, action='tokenize', target=prediction, use_cache=True)
-      srcSpans = fix_span_mismatches(response[u'data'][u'tokenization'][u'src'])
-      tgtSpans = fix_span_mismatches(response[u'data'][u'tokenization'][u'tgt'])
-
-      elapsed_time = time.time() - start_time
-      res = { 'errors': errors,
-              'data': {
-                    'caretPos': caretPos,
-                    'elapsedTime': elapsed_time,
-                    'source': source ,
-                    'sourceSegmentation' : srcSpans,
-                    'nbest': [ { 'target': prediction, 'elapsedTime': elapsed_time, 'author': 'ITP' , 'targetSegmentation': tgtSpans }
-                             ]
-                      } }
+	  
+	  # added for the case where the user has typed extra spaces
+	  #(they are automatically removed in the postprocessing, and therefore
+	  # the previous target suffix does not match the generated one, and prediction is not updated at the GUI)
+	  # ' '.join(prefix.split() is the prefix string w/o excessive whitespace 
+	  pos = caretPos - (len(prefix) - len(' '.join(prefix.split())))
+	  correctedPrediction =  prefix + prediction[pos:]
+	  
+	  # call server and get relevant information from reponse
+	  response = request_to_server_py(source, action='tokenize', target=correctedPrediction, use_cache=True)
+	  srcSpans = fix_span_mismatches(response[u'data'][u'tokenization'][u'src'])
+	  tgtSpans = fix_span_mismatches(response[u'data'][u'tokenization'][u'tgt'])
+    
+	  elapsed_time = time.time() - start_time
+	  res = { 'errors': errors,
+		  'data': {
+			'caretPos': caretPos,
+			'elapsedTime': elapsed_time,
+			'source': source ,
+			'sourceSegmentation' : srcSpans,
+			'nbest': [ { 'target': correctedPrediction, 'elapsedTime': elapsed_time, 'author': 'ITP' , 'targetSegmentation': tgtSpans }
+				 ]
+			  } }
       self.emit('setPrefixResult', res)
 
     # Validates source-target pair
