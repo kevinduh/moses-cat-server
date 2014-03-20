@@ -460,7 +460,7 @@ class MinimalConnection(SocketConnection):
 	  # added for the case where the user has typed extra spaces
 	  #(they are automatically removed in the postprocessing, and therefore
 	  # the previous target suffix does not match the generated one, and prediction is not updated at the GUI)
-	  # ' '.join(prefix.split() is the prefix string w/o excessive whitespace 
+	  # ' '.join(prefix.split() is the prefix string w/o excess whitespace 
 	  pos = caretPos - (len(prefix) - len(' '.join(prefix.split())))
 	  correctedPrediction =  prefix + prediction[pos:]
 	  
