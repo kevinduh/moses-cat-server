@@ -392,6 +392,7 @@ class MinimalConnection(SocketConnection):
       target = data[u'target'] # don't convert to utf8, it will complain after toutf8(prefix)
       caretPos = data[u'caretPos']
       prefix = target[0:caretPos]
+      prefix_no_encoding = prefix
       prefix = toutf8(prefix)
 
       # tokenize prefix (change of var name to "userInput" because "prefix" needs to be returned to the client)
@@ -455,15 +456,19 @@ class MinimalConnection(SocketConnection):
 
           pProcess   = request_to_server_py(toutf8(prediction), 'detruecase', use_cache=True)
           prediction = pProcess[u'data'][u'translations'][0][u'detruecasedText']
-          prediction = toutf8(prediction)
 	  
 	  # added for the case where the user has typed extra spaces
 	  #(they are automatically removed in the postprocessing, and therefore
 	  # the previous target suffix does not match the generated one, and prediction is not updated at the GUI)
-	  # ' '.join(prefix.split() is the prefix string w/o excess whitespace 
-	  pos = caretPos - (len(prefix) - len(' '.join(prefix.split())))
-	  correctedPrediction =  prefix + prediction[pos:]
-	  
+	  # ' '.join(prefix.split() is the prefix string w/o excess whitespace
+	  lenSplitPrefix = len(' '.join(prefix_no_encoding.split()))
+	  lenPrefix = len(prefix_no_encoding)
+	  if lenPrefix != lenSplitPrefix:
+	    pos = caretPos - (lenPrefix - lenSplitPrefix)
+	    correctedPrediction =  prefix_no_encoding + prediction[pos:]
+	    correctedPrediction = toutf8(correctedPrediction)
+	  else: 
+	    correctedPrediction = toutf8(prediction)
 	  # call server and get relevant information from reponse
 	  response = request_to_server_py(source, action='tokenize', target=correctedPrediction, use_cache=True)
 	  srcSpans = fix_span_mismatches(response[u'data'][u'tokenization'][u'src'])
