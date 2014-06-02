@@ -92,11 +92,11 @@ class KillerThread (threading.Thread):
 
 #----------------------------------------------------------------------------------------------------------------------------------
 #path to query and queryPhraseTableMin
-path_to_binaries = '/fs/lofn0/chara/rephraser/'
+#path_to_binaries = '/fs/lofn0/chara/rephraser/'
 # Phrase Tables for en-es and es-en
-PT_en_es = '/fs/lofn0/chara/phrase-table-en-es.minphr'
-PT_es_en = '/fs/lofn0/chara/phrase-table-es-en-2403.minphr'
-LM = '/fs/lofn0/chara/rephraser/toy.binlm.89' # path to language model
+#PT_en_es = '/fs/lofn0/chara/phrase-table-en-es.minphr'
+#PT_es_en = '/fs/lofn0/chara/phrase-table-es-en-2403.minphr'
+#LM = '/fs/lofn0/chara/rephraser/toy.binlm.89' # path to language model
 
 class Rephraser(object):
   def __init__ (self, LanguageModel, PT_ef, PT_fe, moses_binaries):
@@ -104,10 +104,18 @@ class Rephraser(object):
     PT_es_en = PT_fe
     LM = LanguageModel
     path_to_binaries = moses_binaries
+
+    SUBPROCESS_CMDS = {
+        'en-es': [path_to_binaries + '/queryPhraseTableMin  -n 12 -m 15 -s -t ' + PT_en_es], 
+        'es-en': [path_to_binaries + '/queryPhraseTableMin  -n 12 -m 15 -s  -t '+ PT_es_en],
+#        'en-es': [path_to_binaries + '/queryPhraseTableMin -m 15 -n 12 -s -t ' + PT_en_es], 
+#        'es-en': [path_to_binaries + '/queryPhraseTableMin -m 15 -n 12 -s -t '+ PT_es_en],
+        'LM': [path_to_binaries + '/query -n ' + LM]
+        }
     
-    self.procEnEs = PersistentSubprocess('en-es')
-    self.procEsEn = PersistentSubprocess('es-en')
-    self.LM = PersistentSubprocess('LM')
+    self.procEnEs = PersistentSubprocess(SUBPROCESS_CMDS['en-es'])
+    self.procEsEn = PersistentSubprocess(SUBPROCESS_CMDS['es-en'])
+    self.LM = PersistentSubprocess(SUBPROCESS_CMDS['LM'])
   
   def return_rephrase_candidates(self, src_phrase):
     src_phrase = src_phrase.decode ('UTF-8')
@@ -264,13 +272,8 @@ class Rephraser(object):
 
 
 class PersistentSubprocess (object):
-    SUBPROCESS_CMDS = {
-        'en-es': [path_to_binaries + './queryPhraseTableMin -m 15 -n 12 -s -t ' + PT_en_es], 
-        'es-en': [path_to_binaries + './queryPhraseTableMin -m 15 -n 12 -s -t '+ PT_es_en],
-        'LM': [path_to_binaries + './query -n ' + LM]
-        }
-    def __init__ (self, action):
-        self.cmd = self.SUBPROCESS_CMDS[action]
+    def __init__ (self, cmd):
+        self.cmd = cmd
         self.child = None
         self.killer = None
         self.child_lock = threading.Lock()
@@ -478,6 +481,6 @@ def main():
   print time.asctime(), "Server Stops - %s:%s" % (HOST, PORT_NUMBER)  
   
 if __name__ == '__main__':
-  # cmd_debug() call for cmd debugging. Orelse main() to start the API
+  #cmd_debug() # call for cmd debugging. Orelse main() to start the API
   main()
   
