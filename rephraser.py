@@ -94,32 +94,28 @@ class KillerThread (threading.Thread):
 #path to query and queryPhraseTableMin
 #path_to_binaries = '/fs/lofn0/chara/rephraser/'
 # Phrase Tables for en-es and es-en
-#PT_en_es = '/fs/lofn0/chara/phrase-table-en-es.minphr'
-#PT_es_en = '/fs/lofn0/chara/phrase-table-es-en-2403.minphr'
-#LM = '/fs/lofn0/chara/rephraser/toy.binlm.89' # path to language model
+PT_en_es = '/fs/lofn0/chara/phrase-table-en-es.minphr'
+PT_es_en = '/fs/lofn0/chara/phrase-table-es-en-2403.minphr'
+LM = '/fs/lofn0/chara/rephraser/toy.binlm.89' # path to language model
+paraphrase_table = 'skip'
 
 class Rephraser(object):
-  def __init__ (self, LanguageModel, PT_ef, PT_fe, moses_binaries):
-    PT_en_es = PT_ef
-    PT_es_en = PT_fe
-    LM = LanguageModel
-    path_to_binaries = moses_binaries
-
-    SUBPROCESS_CMDS = {
-        'en-es': [path_to_binaries + '/queryPhraseTableMin  -n 12 -m 15 -s -t ' + PT_en_es], 
-        'es-en': [path_to_binaries + '/queryPhraseTableMin  -n 12 -m 15 -s  -t '+ PT_es_en],
-#        'en-es': [path_to_binaries + '/queryPhraseTableMin -m 15 -n 12 -s -t ' + PT_en_es], 
-#        'es-en': [path_to_binaries + '/queryPhraseTableMin -m 15 -n 12 -s -t '+ PT_es_en],
-        'LM': [path_to_binaries + '/query -n ' + LM]
-        }
-    
-    self.procEnEs = PersistentSubprocess(SUBPROCESS_CMDS['en-es'])
-    self.procEsEn = PersistentSubprocess(SUBPROCESS_CMDS['es-en'])
-    self.LM = PersistentSubprocess(SUBPROCESS_CMDS['LM'])
+  def __init__ (self, LanguageModel, PT_ef, PT_fe, moses_binaries, paraphrase_tables):
+    self.PT_en_es = PT_ef
+    self.PT_es_en = PT_fe
+    self.LM = LanguageModel
+    self.path_to_binaries = moses_binaries
+    self.paraphrase_table = paraphrase_tables
+    if (self.paraphrase_table is not None):
+      self.rephraseproc = PersistentSubprocess('paraphrase_table', self.LM, self.paraphrase_table, self.path_to_binaries, self.PT_en_es, self.PT_es_en)
+    else:
+      self.procEnEs = PersistentSubprocess('en-es', self.LM, self.paraphrase_table, self.path_to_binaries, self.PT_en_es, self.PT_es_en)
+      self.procEsEn = PersistentSubprocess('es-en', self.LM, self.paraphrase_table, self.path_to_binaries, self.PT_en_es, self.PT_es_en)
+    self.LM = PersistentSubprocess('LM', self.LM, self.paraphrase_table, self.path_to_binaries, self.PT_en_es, self.PT_es_en)
   
   def return_rephrase_candidates(self, src_phrase):
     src_phrase = src_phrase.decode ('UTF-8')
-    if not self.procEnEs.is_warm() or not self.procEsEn.is_warm() or not self.LM.is_warm() :
+    if not self.LM.is_warm() :
         print "The subprocesses are warming up..."
        
     """ make sure that the input has correct format """
@@ -148,7 +144,28 @@ class Rephraser(object):
             covered_start = part[1]
             covered_end = part[2]
             ngram_phrase = part[0]
-            if cached_rephrase_table.get(ngram_phrase) is None: 
+            if cached_rephrase_table.get(ngram_phrase) is None:
+              if (self.paraphrase_table is not None):
+                #print 'use paraphrase table'
+                try:
+                    rephrase_candidate = self.rephraseproc.get_output(ngram_phrase)
+                    for line in rephrase_candidate:
+                        try:
+                            phrase = line.split('|||')[1].strip(' \t\n\r')
+                            """ to avoid cases where it's exactly the same phrase plus some e.g. punctuation marks 
+                            if text_to_rephrase not in phrase: """
+                            rephrase_table_score = float(line.split('|||')[2])
+                            temp_rephrases[phrase] = [covered_start, covered_end, rephrase_table_score]
+                        except:
+                              pass
+                    if (len(temp_rephrases)==0 and ngram == 1):
+                        # OOV word (unigrams only), append with high rephrase score
+                        temp_rephrases[ngram_phrase] = [covered_start, covered_end, -99.999] 
+                    possible_rephrases.update(temp_rephrases)
+                except:
+                  pass
+              else: # Paraphrase table not available, use en-es and es-en Phrase Tables
+                #print 'use phrase tables'
                 potential_translation = self.procEnEs.get_output(ngram_phrase)
                 if (len(potential_translation)> 0):
                   for translation in potential_translation:
@@ -272,8 +289,25 @@ class Rephraser(object):
 
 
 class PersistentSubprocess (object):
-    def __init__ (self, cmd):
-        self.cmd = cmd
+    def cmd_action(self, action):
+        SUBPROCESS_CMDS = {
+            'en-es': [self.path_to_binaries + './queryPhraseTableMin -m 15 -n 12 -s -t ' + self.PT_en_es], 
+            'es-en': [self.path_to_binaries + './queryPhraseTableMin -m 15 -n 12 -s -t '+ self.PT_es_en],
+            'LM': [self.path_to_binaries + './query -n ' + self.LM],
+            'paraphrase_table': [self.path_to_binaries + './queryPhraseTableMin -m 35 -n 1 -s -t '+ self.paraphrase_table],
+            }
+        return SUBPROCESS_CMDS[action]
+    
+    def __init__ (self, action, LM, paraphrase_table, path_to_binaries, PT_en_es, PT_es_en):
+        self.LM = LM
+        if paraphrase_table is not None:
+          self.paraphrase_table = paraphrase_table
+        else:
+          self.paraphrase_table = 'skip'
+        self.path_to_binaries = path_to_binaries
+        self.PT_en_es = PT_en_es
+        self.PT_es_en = PT_es_en
+        self.cmd = self.cmd_action(action)
         self.child = None
         self.killer = None
         self.child_lock = threading.Lock()
@@ -430,7 +464,7 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
     return
     
 #----------------------------------------------------------------------------------------------------------------------------------
-# cmd line interface for debuggingd
+
 def cmd_debug ():
   import argparse
   import sys
@@ -438,11 +472,12 @@ def cmd_debug ():
   parser = argparse.ArgumentParser()
   parser.add_argument('--PT-ef', help='Phrase table english to foreign (en-es)', default='/fs/lofn0/chara/phrase-table-en-es.minphr')
   parser.add_argument('--PT-fe', help='Phrase table foreign to english (es-en)', default='/fs/lofn0/chara/phrase-table-es-en-2403.minphr')
-  parser.add_argument('--LM', help='Path to language model', default='toy.binlm.89')
+  parser.add_argument('--LM', help='Path to language model', default='/fs/lofn0/chara/toy.binlm.89')
   parser.add_argument('--moses-binaries', help='Path to queryPhraseTableMin and query', default='/fs/lofn0/chara/rephraser/')
+  parser.add_argument('--paraphrase-table', help='Path to Paraphrase Table')
   settings = parser.parse_args(sys.argv[1:])
   
-  rephraseProcess = Rephraser(settings.LM, settings.PT_ef, settings.PT_fe, settings.moses_binaries)
+  rephraseProcess = Rephraser(settings.LM, settings.PT_ef, settings.PT_fe, settings.moses_binaries, settings.paraphrase_table)
   while True:
     try:
       src_phrase = raw_input ('What do you want to rephrase?> ')
@@ -452,19 +487,20 @@ def cmd_debug ():
     print rephraseProcess.return_rephrase_candidates(src_phrase)
 
 def main():
-  """ API format: eg. 'http://localhost:8666/rephrase/q=I+want+to+||+give+a+lecture+||+in+Paris+next+week' """
+  """ API format: eg. 'http://localhost:8999/rephrase/q=I+want+to+||+give+a+lecture+||+in+Paris+next+week' """
   import argparse
   import sys
   
   parser = argparse.ArgumentParser()
   parser.add_argument('--PT-ef', help='Phrase table english to foreign (en-es)', default='/fs/lofn0/chara/phrase-table-en-es.minphr')
   parser.add_argument('--PT-fe', help='Phrase table foreign to english (es-en)', default='/fs/lofn0/chara/phrase-table-es-en-2403.minphr')
-  parser.add_argument('--LM', help='Path to language model', default='toy.binlm.89')
+  parser.add_argument('--LM', help='Path to language model', default='/fs/lofn0/chara/toy.binlm.89')
   parser.add_argument('--moses-binaries', help='Path to queryPhraseTableMin and query', default='/fs/lofn0/chara/rephraser/')
+  parser.add_argument('--paraphrase-table', help='Path to Paraphrase Table')
   parser.add_argument('--port', help='API port', type=int, default=8666)
   parser.add_argument('--host', help='host of the API, default: localhost', default='localhost')
   settings = parser.parse_args(sys.argv[1:])
-  rephraseProcess = Rephraser(settings.LM, settings.PT_ef, settings.PT_fe, settings.moses_binaries)
+  rephraseProcess = Rephraser(settings.LM, settings.PT_ef, settings.PT_fe, settings.moses_binaries, settings.paraphrase_table)
 
   """ for http requests """
   PORT_NUMBER = settings.port
@@ -481,6 +517,5 @@ def main():
   print time.asctime(), "Server Stops - %s:%s" % (HOST, PORT_NUMBER)  
   
 if __name__ == '__main__':
-  #cmd_debug() # call for cmd debugging. Orelse main() to start the API
+  # cmd_debug() call for cmd debugging. Orelse main() to start the API
   main()
-  
