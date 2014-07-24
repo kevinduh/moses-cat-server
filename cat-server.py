@@ -37,6 +37,8 @@ except:
 
 from biconcor import BiconcorProcess, parse_biconcor_output_into_json_struct
 
+sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', 0)
+
 ### global vars ###
 
 # root directory of the server
@@ -523,7 +525,7 @@ class MinimalConnection(SocketConnection):
       print "alignmentPoints ", alignmentPoints
       alignmentMatrix = [[0 for i in range(len(tgtSpans))] for j in range(len(srcSpans))]
       for point in alignmentPoints:
-        alignmentMatrix[ point[0] ][ point[1] ] = 1
+        alignmentMatrix[ point[u'src_idx'] ][ point[u'tgt_idx'] ] = 1
 
       errors = []
       res = { 'errors': errors,
