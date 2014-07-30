@@ -66,37 +66,10 @@ class BiconcorProcess (object):
     Convenience object that encapsulates all interaction with the biconcor binaries.
     """
 
-    BICONCOR_CMDS = {
-        'en-de': [
-            '/disk7/pkoehn/catserver/biconcor/biconcor',
-            '--load', '/disk2/cat-models/wmt13-en-de/biconcor',
-            '--stdio',
-            ],
-        'fr-en': [
-            '/disk7/pkoehn/catserver/biconcor/biconcor',
-            '--load', '/disk2/cat-models/wmt13-fr-en.biconcor',
-            '--stdio',
-            ],
-        'en-da': [
-            '/disk7/pkoehn/catserver/biconcor/biconcor',
-            '--load', '/disk2/cat-models/casmacat-en-da/biconcor/biconcor.out',
-            '--stdio',
-            ],
-        }
-
-    def __init__ (self, lang_pair):
-        try:
-            self.cmd = self.BICONCOR_CMDS[lang_pair] + [
-                '--translations', str(MAX_TRANSLATIONS),
-                '--examples', str(MAX_EXAMPLES_PER_TRANS),
-                ]
-        except KeyError:
-            raise ValueError (
-                "Concordancer is not configured for language pair %r. This is set in %s, variable BICONCOR_CMDS" % (
-                    lang_pair,
-                    re.sub (r'\.pyc$', '.py', __file__),
-                    )
-                )
+    def __init__ (self, command, model):
+        self.cmd = [ command, '--load', model, '--stdio',
+                     '--translations', str(MAX_TRANSLATIONS),
+                     '--examples', str(MAX_EXAMPLES_PER_TRANS) ]
         self.child = None
         self.killer = None
         self.child_lock = threading.Lock()

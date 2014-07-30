@@ -46,6 +46,8 @@ ROOT = os.path.normpath(os.path.dirname(__file__))
 
 # BiconcorProcess objects, indexed by the language pair
 biconcor_processes = {}
+biconcor_model = None
+biconcor_cmd = None
 
 # Defaults for MT Server
 mt_port = 9000
@@ -153,7 +155,9 @@ def request_to_server_py (text, action='translate', use_cache=False, target=''):
   if action == 'translate':
     params = '&key=0&source=xx&target=xx&sg=true&topt=true' # sg=true to return searchgraph; topt=true to return translation options
   elif action == 'align' or action == 'tokenize':
-    params = '&t=%s' % urllib.quote_plus(target)
+    params = '&t=%s&mode=sym' % urllib.quote_plus(target)
+  elif action == 'update':
+    params = "&t=%s&source=xx&target=xx" % urllib.quote_plus(target)
 
   url = 'http://%s:%d/%s?%s' % (
     mt_host,
@@ -500,9 +504,22 @@ class MinimalConnection(SocketConnection):
     *   @setup data
     *     elapsedTime {Number} ms """
     @cat_event
-    def Validate(self,data):
-      print "Validate not implemented"
+    def validate(self,data):
+      # requires source and target text
+      source = toutf8(data[u'source'])
+      target = toutf8(data[u'target'])
 
+      # call server and get relevant information from reponse
+      response = request_to_server_py(source, action='update', target=target, use_cache=True)
+
+      # send response to client
+      elapsed_time = time.time() - start_time
+      errors = []
+      res = { 'errors': errors,
+              'data': {
+                 'elapsedTime': elapsed_time,
+            } }
+      self.emit('validateResult', res)
 
     @cat_event
     def getAlignments(self, data):
@@ -682,10 +699,10 @@ class MinimalConnection(SocketConnection):
       print "getValidatedContributions not implemented"
 
     def _biconcor_proc (self, data):
-      lang_pair = 'en-da' #str('%s-%s' % (data['srcLang'].lower(), data['tgtLang'].lower()))
+      lang_pair = 'xx-xx' # not used
       biconcor_proc = biconcor_processes.get (lang_pair)
-      if biconcor_proc is None:
-        biconcor_proc = biconcor_processes[lang_pair] = BiconcorProcess (lang_pair)
+      if biconcor_proc is None and biconcor_model is not None:
+        biconcor_proc = biconcor_processes[lang_pair] = BiconcorProcess (biconcor_cmd, biconcor_model)
       return biconcor_proc
 
     @cat_event
@@ -746,9 +763,13 @@ if __name__ == "__main__":
     parser.add_argument('--port', help='server port to bind to, default: 9999', type=int, default=9999)
     parser.add_argument('--mt-host', help='host of the mt server (server.py), default '+mt_host, default=mt_host)
     parser.add_argument('--mt-port', help='port of the mt server (server.py), default '+str(mt_port), type=int, default=mt_port)
+    parser.add_argument('--biconcor-model', help='model file for bilingual concordancer')
+    parser.add_argument('--biconcor-cmd', help='command binary for bilingual concordancer')
     settings = parser.parse_args(sys.argv[1:])
     mt_host = settings.mt_host
     mt_port = settings.mt_port
+    biconcor_model = settings.biconcor_model
+    biconcor_cmd = settings.biconcor_cmd
 
     LOG_FILENAME = '%s.catserver.log' %datetime.datetime.now().strftime("%Y%m%d-%H.%M.%S")
     logformat = '%(asctime)s %(thread)d - %(filename)s:%(lineno)s: %(message)s'
