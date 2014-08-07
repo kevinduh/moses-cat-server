@@ -155,7 +155,9 @@ def request_to_server_py (text, action='translate', use_cache=False, target=''):
   if action == 'translate':
     params = '&key=0&source=xx&target=xx&sg=true&topt=true' # sg=true to return searchgraph; topt=true to return translation options
   elif action == 'align' or action == 'tokenize':
-    params = '&t=%s&mode=sym' % urllib.quote_plus(target)
+    params = '&t=%s' % urllib.quote_plus(target)
+    if action == 'align':
+      params = params + '&mode=sym'
   elif action == 'update':
     params = "&t=%s&source=xx&target=xx" % urllib.quote_plus(target)
 
@@ -374,9 +376,11 @@ class MinimalConnection(SocketConnection):
 
     @cat_event
     def decode(self, data):
+      start_time = time.time()
       res = request_translation_and_searchgraph(toutf8(data[u'source']))
       res.get('data',{}).setdefault ('segId', data.get('segId'))
       res.get('data',{}).setdefault ('isPreFetch', data.get('isPreFetch'))
+      res[u'data'][u'elapsedTime'] = time.time()-start_time
       self.emit('decodeResult', res)
 
     @cat_event
@@ -480,14 +484,13 @@ class MinimalConnection(SocketConnection):
 	  srcSpans = fix_span_mismatches(response[u'data'][u'tokenization'][u'src'])
 	  tgtSpans = fix_span_mismatches(response[u'data'][u'tokenization'][u'tgt'])
     
-	  elapsed_time = time.time() - start_time
 	  res = { 'errors': errors,
 		  'data': {
 			'caretPos': caretPos,
-			'elapsedTime': elapsed_time,
-			'source': source ,
+			'elapsedTime': time.time() - start_time,
+			'source': source,
 			'sourceSegmentation' : srcSpans,
-			'nbest': [ { 'target': correctedPrediction, 'elapsedTime': elapsed_time, 'author': 'ITP' , 'targetSegmentation': tgtSpans }
+			'nbest': [ { 'target': correctedPrediction, 'elapsedTime': time.time() - start_time, 'author': 'ITP' , 'targetSegmentation': tgtSpans }
 				 ]
 			  } }
       self.emit('setPrefixResult', res)
@@ -505,6 +508,7 @@ class MinimalConnection(SocketConnection):
     *     elapsedTime {Number} ms """
     @cat_event
     def validate(self,data):
+      start_time = time.time()
       # requires source and target text
       source = toutf8(data[u'source'])
       target = toutf8(data[u'target'])
@@ -513,16 +517,16 @@ class MinimalConnection(SocketConnection):
       response = request_to_server_py(source, action='update', target=target, use_cache=True)
 
       # send response to client
-      elapsed_time = time.time() - start_time
       errors = []
       res = { 'errors': errors,
               'data': {
-                 'elapsedTime': elapsed_time,
+                 'elapsedTime': time.time() - start_time,
             } }
       self.emit('validateResult', res)
 
     @cat_event
     def getAlignments(self, data):
+      start_time = time.time()
       # requires source and target text
       source = toutf8(data[u'source'])
       target = toutf8(data[u'target'])
@@ -546,18 +550,19 @@ class MinimalConnection(SocketConnection):
 
       errors = []
       res = { 'errors': errors,
-              'data': {
-          'source': source,
-          'sourceSegmentation': srcSpans,
-          'target': target,
-          'targetSegmentation': tgtSpans,
-          'alignments': alignmentMatrix
+              'data': {'source': source,
+                       'sourceSegmentation': srcSpans,
+                       'target': target,
+                       'targetSegmentation': tgtSpans,
+                       'alignments': alignmentMatrix,
+                       'elapsedTime': time.time() - start_time
           } }
       self.emit('getAlignmentsResult', res)
 
 
     @cat_event
     def getTokens(self, data):
+      start_time = time.time()
 
       # requires source and target text
       source = toutf8(data[u'source'])
@@ -574,7 +579,8 @@ class MinimalConnection(SocketConnection):
                     'source': source,
                     'sourceSegmentation' : srcSpans,
                     'target': target,
-		    'targetSegmentation': tgtSpans
+		    'targetSegmentation': tgtSpans,
+                    'elapsedTime': time.time() - start_time
                     } }
       self.emit('getTokensResult', res)
 
@@ -600,6 +606,7 @@ class MinimalConnection(SocketConnection):
     """
     @cat_event
     def getConfidences(self, data):
+      start_time = time.time()
       print "getConfidences not implemented"
 
     """ Adds a replacement rule.
@@ -707,6 +714,7 @@ class MinimalConnection(SocketConnection):
 
     @cat_event
     def biconcor (self, data):
+      start_time = time.time()
       try:
         biconcor_proc = self._biconcor_proc (data)
         src_phrase = data['srcPhrase']
@@ -718,6 +726,7 @@ class MinimalConnection(SocketConnection):
             'errors': [],
             'data': {
               'warm': False,
+	      'elapsedTime': time.time() - start_time,
               'srcPhrase': src_phrase,
               }
             })
@@ -733,11 +742,13 @@ class MinimalConnection(SocketConnection):
             'warm': True,
             'srcPhrase': src_phrase,
             'concorStruct': concor_struct,
+            'elapsedTime': time.time() - start_time
             }
           })
 
     @cat_event
     def warmUpBiconcordancer (self, data):
+      start_time = time.time()
       self._biconcor_proc(data).warm_up()
 
 
@@ -765,15 +776,16 @@ if __name__ == "__main__":
     parser.add_argument('--mt-port', help='port of the mt server (server.py), default '+str(mt_port), type=int, default=mt_port)
     parser.add_argument('--biconcor-model', help='model file for bilingual concordancer')
     parser.add_argument('--biconcor-cmd', help='command binary for bilingual concordancer')
+    parser.add_argument('--log-dir', help='directory for log files', default=".")
     settings = parser.parse_args(sys.argv[1:])
     mt_host = settings.mt_host
     mt_port = settings.mt_port
     biconcor_model = settings.biconcor_model
     biconcor_cmd = settings.biconcor_cmd
 
-    LOG_FILENAME = '%s.catserver.log' %datetime.datetime.now().strftime("%Y%m%d-%H.%M.%S")
-    logformat = '%(asctime)s %(thread)d - %(filename)s:%(lineno)s: %(message)s'
-    logging.basicConfig(filename=LOG_FILENAME,level=logging.DEBUG,format=logformat)
+    log_file = '%s.catserver.log' %datetime.datetime.now().strftime("%Y%m%d-%H.%M.%S")
+    log_format = '%(asctime)s %(thread)d - %(filename)s:%(lineno)s: %(message)s'
+    logging.basicConfig(filename=settings.log_dir+"/"+log_file,level=logging.DEBUG,format=log_format)
 
     application = web.Application(
         MinimalRouter.apply_routes([]),
