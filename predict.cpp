@@ -144,6 +144,7 @@ int match_last_word_window;
 set< Word > partially_matches_last_token;
 set< pair< Word, Word > > approximate_word_match, lowercase_word_match, suffix_insensitive_word_match;
 set< Word > already_processed;
+FILE *log_in;
 
 // main //////////
 
@@ -176,6 +177,7 @@ int main(int argc, char* argv[])
 				exit(1);
 			}
 			logfile_name = argv[++i];
+			log_in = fopen (logfile_name.c_str(), "w");
 		}
 		else if (arg == "-w" || arg.find("partial-word") != string::npos) {
 			last_word_may_match_partially = true;
@@ -229,6 +231,11 @@ int main(int argc, char* argv[])
 	int request_id = 0;
 	while (std::getline(cin,line))
 	{
+		if (log_in) {
+			fwrite(line.c_str(),1,line.size(),log_in);
+			fputc((int)'\n', log_in);
+			fflush(log_in);
+		} 
 	        double start_time = get_wall_time();
 		// cerr << line << endl;
 		// convert prefix string into our representation (vector of integers)
@@ -492,7 +499,7 @@ int main(int argc, char* argv[])
 		if (predictedSuffix.size() == 0) {
 			cout << " ";
 		}
-		cout << endl;
+		cout << endl << flush;
 
 		// clear out search
 		for( int state = 0; state < states.size(); state++ ) {
@@ -819,11 +826,19 @@ void load_states_transitions( float threshold ){
 	map< int, int> recombination;
 
 	std::getline(cin,line); // skip headers (find efficient alt)
+	if (log_in) {
+		fwrite(line.c_str(),1,line.size(),log_in);
+		fputc((int)'\n', log_in);
+	} 
 	int i=0;
  		
 	while (line.find("ENDSG") != 0)
 	{
 		std::getline(cin,line);
+		if (log_in) {
+			fwrite(line.c_str(),1,line.size(),log_in);
+			fputc((int)'\n', log_in);
+		} 
 		std::string out;
 		istringstream ss(line);
 		

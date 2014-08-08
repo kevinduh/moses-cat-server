@@ -52,6 +52,7 @@ biconcor_cmd = None
 # Defaults for MT Server
 mt_port = 9000
 mt_host = 'localhost'
+log_dir = '.'
 
 ### generic utils ###
 
@@ -420,14 +421,18 @@ class MinimalConnection(SocketConnection):
 
       logging.debug("calling prediction binary")
       prediction = ''
+      timeout = 1 # seconds - only integer values allowed
       if predictProcess.get(sgId) is None:
         logging.debug('creating a new prediction process')
         try:
-            p = subprocess.Popen(['./predict','-W','-s','3','3','-t','0.4','-f','5','-m','0.1'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, preexec_fn = lambda: os.nice(10),)
-
+	    t = time.time()
+	    err = open("%s/predict.%s.%s.err" % (log_dir,sgId,t),"w")
+	    log = "%s/predict.%s.%s.in" % (log_dir,sgId,t)
+            p = subprocess.Popen(['./predict','-W','-s','3','3','-t','0.4','-f','5','-m','0.1','-l',log], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=err, preexec_fn = lambda: os.nice(10),)
             p.stdin.write(searchGraph[sgId])
             p.stdin.flush()
 	    predictProcess[ sgId ] = p
+	    timeout = 3
         except:
             logging.debug("could not create prediction process")
       try:
@@ -436,7 +441,7 @@ class MinimalConnection(SocketConnection):
 
           """ timeout """
           signal.signal(signal.SIGALRM, alarm_handler)
-          signal.alarm(11)  # 11"
+          signal.alarm(timeout)
 
           try:
             prediction = predictProcess[ sgId ].stdout.readline()
@@ -780,12 +785,13 @@ if __name__ == "__main__":
     settings = parser.parse_args(sys.argv[1:])
     mt_host = settings.mt_host
     mt_port = settings.mt_port
+    log_dir = settings.log_dir
     biconcor_model = settings.biconcor_model
     biconcor_cmd = settings.biconcor_cmd
 
     log_file = '%s.catserver.log' %datetime.datetime.now().strftime("%Y%m%d-%H.%M.%S")
     log_format = '%(asctime)s %(thread)d - %(filename)s:%(lineno)s: %(message)s'
-    logging.basicConfig(filename=settings.log_dir+"/"+log_file,level=logging.DEBUG,format=log_format)
+    logging.basicConfig(filename=log_dir+"/"+log_file,level=logging.DEBUG,format=log_format)
 
     application = web.Application(
         MinimalRouter.apply_routes([]),
