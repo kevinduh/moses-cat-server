@@ -549,11 +549,15 @@ class MinimalConnection(SocketConnection):
 
       # process alignment points into matrix
       print "alignmentPoints ", alignmentPoints
-      alignmentMatrix = [[0 for i in range(len(tgtSpans))] for j in range(len(srcSpans))]
-      for point in alignmentPoints:
-        alignmentMatrix[ point[u'src_idx'] ][ point[u'tgt_idx'] ] = 1
+      if len(alignmentPoints) == 0:
+        errors = ['could not establish any alignment points']
+        alignmentMatrix = []
+      else:
+        errors = []
+        alignmentMatrix = [[0 for i in range(len(tgtSpans))] for j in range(len(srcSpans))]
+        for point in alignmentPoints:
+          alignmentMatrix[ point[u'src_idx'] ][ point[u'tgt_idx'] ] = 1
 
-      errors = []
       res = { 'errors': errors,
               'data': {'source': source,
                        'sourceSegmentation': srcSpans,
