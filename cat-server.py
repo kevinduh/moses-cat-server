@@ -195,7 +195,11 @@ def request_to_server_py (text, action='translate', use_cache=False, target=''):
       print "Can't parse JSON: %r" % json_str
       raise
     if use_cache:
-      server_py_cache[url] = output_struct
+      try: 
+	dummy = output_struct[u'data']
+        server_py_cache[url] = output_struct
+      except:
+        print "nope, not storing in cache, data faulty"
 
   if output_struct.get('traceback'):
     print re.sub (r'^', 'server.py: ', output_struct['traceback'], flags=re.M)
@@ -464,6 +468,10 @@ class MinimalConnection(SocketConnection):
       res = {}
       if prediction:
           # add prefix to ensure correct tokenization (esp. of opening/closing quotes).
+	  # fix bug in binary, which may introduce extra spaces
+	  if prefix.endswith(" ") and prediction.startswith(" "):
+              prediction = prediction[1:]
+              logging.debug("removed extra space, so that prefix '" + prefix + "' is followed by '" + prediction + "'")
           prediction = prefix + prediction
           #postprocessing
           pProcess   = request_to_server_py(prediction, 'detokenize', use_cache=True)
