@@ -8,6 +8,7 @@ import re
 import operator
 import os
 import subprocess
+import tempfile
 import threading
 from traceback import print_exc
 import time
@@ -224,8 +225,7 @@ class Rephraser(object):
                         temp_rephrases[rephrased_item[0]] = [covered_start, covered_end, rephrased_item[1]]
                     possible_rephrases.update(temp_rephrases)
 
-        """ done with ngram.
-        now combine possible_rephrases """
+        """ done with ngram. now combine possible_rephrases """
 
         ''' split according to covered_start '''
         covered_states = {}
@@ -405,25 +405,29 @@ def ngrams(phrase, n):
     rephrase_candidates: list of dictionaries that contain all possible rephrased combinations from covered_states. key:  covered_from
 """
 def decode_candidates(to_state_covered, inputSize, covered_states, rephrase_candidates):
+    BEAM_SIZE = 100
     if len(rephrase_candidates[to_state_covered]) > 0:  # states are combined already, no need to process further
         return rephrase_candidates
     else:
-        current_state = inputSize - 1
-        for _ in xrange(1000): # 2014-08-05 - herve - we have infinite loops here, this quick fix might help?
-            if current_state < to_state_covered:
-                break
+        cur_state = inputSize - 1
+        while cur_state >= to_state_covered:
             """ start from right to left and append to rephrase_candidates """
-            for rephrase_candidate in covered_states[current_state]:
-                candidate_phrase = rephrase_candidate[0]
-                candidate_score = rephrase_candidate[1][2]
-                to_current_state_covered = rephrase_candidate[1][1] + 1
-                if to_current_state_covered < inputSize:   # forward combinations exist already, just append
-                    for forward_candidate in rephrase_candidates[to_current_state_covered].items():
-                        phrase = candidate_phrase + ' ' + forward_candidate[0]
-                        rephrase_candidates[current_state].update({ phrase : candidate_score + forward_candidate[1] })
+            cur_rephrases = rephrase_candidates[cur_state]
+            for cand_phrase,(cand_start_state,cand_end_state,cand_score) in covered_states[cur_state]:
+                to_cur_state_covered = cand_end_state + 1
+                if to_cur_state_covered < inputSize:   # forward combinations exist already, just append
+                    for fwd_phrase,fwd_score in rephrase_candidates[to_cur_state_covered].iteritems():
+                        phrase = cand_phrase + ' ' + fwd_phrase
+                        cur_rephrases[phrase] = cand_score + fwd_score
                 else:
-                    rephrase_candidates[current_state].update({ candidate_phrase : candidate_score })
-            current_state = current_state - 1
+                    cur_rephrases[cand_phrase] = cand_score
+            if len(cur_rephrases) > BEAM_SIZE:
+                # prune
+                threshold = sorted(cur_rephrases.itervalues())[-BEAM_SIZE]
+                for phrase,score in cur_rephrases.items():
+                    if score < threshold:
+                        cur_rephrases.pop(phrase)
+            cur_state = cur_state - 1
         return rephrase_candidates
 
 def handleRequestsUsing(rephraseProcess):
@@ -481,10 +485,28 @@ def cmd_debug ():
 
         print rephraseProcess.return_rephrase_candidates(src_phrase)
 
+def monitor_mem_usage ():
+    from guppy import hpy
+    from resource import RUSAGE_SELF, getrusage
+    TEN_GB = 10*1000*1000
+    while True:
+        mem_usage = getrusage(RUSAGE_SELF)[2]
+        if mem_usage > TEN_GB:
+            with tempfile.NamedTemporaryFile (prefix='rephraser-mem-dump', delete=False) as fh:
+                try:
+                    print >> fh, hpy().heap()
+                except AssertionError:
+                    # Just call it a second time, it works. It's a bug in heapy
+                    print >> fh, hpy().heap()
+                print "Wrote '%s'" % fh.name
+        time.sleep (10)
+
 def main():
     """ API format: eg. 'http://localhost:8999/rephrase/q=I+want+to+||+give+a+lecture+||+in+Paris+next+week' """
     import argparse
     import sys
+
+    #threading.Thread(target=monitor_mem_usage).start()
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--PT-ef', help='Phrase table english to foreign (en-es)', default='/fs/lofn0/chara/phrase-table-en-es.minphr')
