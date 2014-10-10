@@ -156,7 +156,7 @@ class Rephraser(object):
                                     """ to avoid cases where it's exactly the same phrase plus some e.g. punctuation marks
                                     if text_to_rephrase not in phrase: """
                                     rephrase_table_score = float(line.split('|||')[2])
-                                    temp_rephrases[phrase] = [covered_start, covered_end, rephrase_table_score]
+                                    temp_rephrases[phrase] = [covered_start, covered_end, math.log10(rephrase_table_score)]
                                 except:
                                     print_exc()
                             if (len(temp_rephrases)==0 and ngram == 1):
