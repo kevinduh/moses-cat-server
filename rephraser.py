@@ -8,7 +8,6 @@ import re
 import operator
 import os
 import subprocess
-import tempfile
 import threading
 from traceback import print_exc
 import time
@@ -485,28 +484,10 @@ def cmd_debug ():
 
         print rephraseProcess.return_rephrase_candidates(src_phrase)
 
-def monitor_mem_usage ():
-    from guppy import hpy
-    from resource import RUSAGE_SELF, getrusage
-    TEN_GB = 10*1000*1000
-    while True:
-        mem_usage = getrusage(RUSAGE_SELF)[2]
-        if mem_usage > TEN_GB:
-            with tempfile.NamedTemporaryFile (prefix='rephraser-mem-dump', delete=False) as fh:
-                try:
-                    print >> fh, hpy().heap()
-                except AssertionError:
-                    # Just call it a second time, it works. It's a bug in heapy
-                    print >> fh, hpy().heap()
-                print "Wrote '%s'" % fh.name
-        time.sleep (10)
-
 def main():
     """ API format: eg. 'http://localhost:8999/rephrase/q=I+want+to+||+give+a+lecture+||+in+Paris+next+week' """
     import argparse
     import sys
-
-    #threading.Thread(target=monitor_mem_usage).start()
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--PT-ef', help='Phrase table english to foreign (en-es)', default='/fs/lofn0/chara/phrase-table-en-es.minphr')
