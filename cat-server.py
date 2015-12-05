@@ -413,9 +413,6 @@ class MinimalConnection(SocketConnection):
       # tokenize prefix (change of var name to "userInput" because "prefix" needs to be returned to the client)
       pProcess  = request_to_server_py('', action='tokenize', target=prefix)
       userInput = pProcess[u'data'][u'tokenizedTarget']
-      #truecase
-      pProcess  = request_to_server_py(toutf8(userInput), action='truecase')
-      userInput = pProcess[u'data'][u'translations'][0][u'truecasedText']
       userInput = toutf8(userInput)
 
       sgId = hashlib.sha224(source).hexdigest()
