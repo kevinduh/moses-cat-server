@@ -140,7 +140,7 @@ predictProcess = MRUDict(1000)
 server_py_cache = MRUDict (1000)
 
 def request_to_server_py (text, action='translate', use_cache=False, target=''):
-  
+
   if isinstance (text, unicode):
     text = text.encode ('UTF-8')
   if isinstance (target, unicode):
@@ -155,7 +155,7 @@ def request_to_server_py (text, action='translate', use_cache=False, target=''):
   params = '' # additional parameters
   if action == 'translate':
     params = '&key=0&source=xx&target=xx&sg=true&topt=true' # sg=true to return searchgraph; topt=true to return translation options
-  elif action == 'align' or action == 'tokenize':
+  elif action == 'align' or action == 'tokenize' or action == 'confidence':
     params = '&t=%s' % urllib.quote_plus(target)
     if action == 'align':
       params = params + '&mode=sym'
@@ -195,7 +195,7 @@ def request_to_server_py (text, action='translate', use_cache=False, target=''):
       print "Can't parse JSON: %r" % json_str
       raise
     if use_cache:
-      try: 
+      try:
 	dummy = output_struct[u'data']
         server_py_cache[url] = output_struct
       except:
@@ -273,7 +273,7 @@ def process_options(sentence, options, max_level):
   sentence = pProcess[u'data'][u'tokenizedSource']
   words = sentence.split(' ')
   wordsLength = len(words)
-  
+
   for start in range(0,wordsLength):
     for end in range(start, wordsLength):
         cost[(start, end)] = -100 * (1+end-start)
@@ -312,27 +312,27 @@ def process_options(sentence, options, max_level):
 
   # compute level for each option
   filled = [-1] * wordsLength
-      
+
   # sort options by full cost
   options.sort(key=lambda options: options['full_cost'], reverse=True)
   filtered_options = [] # to keep only options that have level < max_level
-  
+
   for k in xrange(len(options)):
     level = 0
 
     for i in range(options[k]['start'], options[k]['end']+1):
       if filled[i]+1 > level:
 	level = filled[i]+1
-	
+
     if level <= max_level: # we want to get rid of some of the options
       for i in range(options[k]['start'], options[k]['end']+1):
 	filled[i] = level # filled[i] +1 #
-	
+
       options[k]['level'] = level
       filtered_options.append(options[k])
-  
+
   filtered_options.sort(key=lambda filtered_options: filtered_options['start'])
-  
+
   return filtered_options
 
 """This class will handle our client/server API. Each function we would like to
@@ -476,7 +476,7 @@ class MinimalConnection(SocketConnection):
 
           pProcess   = request_to_server_py(toutf8(prediction), 'detruecase', use_cache=True)
           prediction = pProcess[u'data'][u'translations'][0][u'detruecasedText']
-	  
+
 	  # added for the case where the user has typed extra spaces
 	  #(they are automatically removed in the postprocessing, and therefore
 	  # the previous target suffix does not match the generated one, and prediction is not updated at the GUI)
@@ -487,13 +487,13 @@ class MinimalConnection(SocketConnection):
 	    pos = caretPos - (lenPrefix - lenSplitPrefix)
 	    correctedPrediction =  prefix_no_encoding + prediction[pos:]
 	    correctedPrediction = toutf8(correctedPrediction)
-	  else: 
+	  else:
 	    correctedPrediction = toutf8(prediction)
 	  # call server and get relevant information from reponse
 	  response = request_to_server_py(source, action='tokenize', target=correctedPrediction, use_cache=True)
 	  srcSpans = fix_span_mismatches(response[u'data'][u'tokenization'][u'src'])
 	  tgtSpans = fix_span_mismatches(response[u'data'][u'tokenization'][u'tgt'])
-    
+
 	  res = { 'errors': errors,
 		  'data': {
 			'caretPos': caretPos,
@@ -621,7 +621,29 @@ class MinimalConnection(SocketConnection):
     @cat_event
     def getConfidences(self, data):
       start_time = time.time()
-      print "getConfidences not implemented"
+
+      source = toutf8(data[u'source'])
+      target = toutf8(data[u'target'])
+
+      response = request_to_server_py(source, action='confidence', target=target)
+      srcSpans = fix_span_mismatches(response[u'data'][u'tokenization'][u'src'])
+      tgtSpans = fix_span_mismatches(response[u'data'][u'tokenization'][u'tgt'])
+      word_confidence = response[u'data'][u'confidence'][u'word']
+      sent_confidence = response[u'data'][u'confidence'][u'word']
+
+      self.emit ('getConfidencesResult', {
+          'errors': [],
+          'data': {
+            'quality': sent_confidence,
+            'confidences': word_confidence,
+            'source': source,
+            'sourceSegmentation': srcSpans,
+            'target': target,
+            'targetSegmentation': tgtSpans,
+            'elapsedTime': time.time() - start_time
+            }
+          })
+
 
     """ Adds a replacement rule.
     * @param {Object}
