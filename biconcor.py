@@ -57,7 +57,7 @@ class KillerThread (threading.Thread):
                     self.child_proc.terminate()
                     self.child_proc.wait()
                     break
-            
+
 
 #----------------------------------------------------------------------------------------------------------------------------------
 
@@ -144,6 +144,7 @@ def parse_biconcor_output_into_json_struct (raw_output, detokenize_and_postproce
         sent_pair_structs = []
         tgt_phrase_struct = {
             'tgt_phrase': tgt_phrase,
+            'tgt_phrase_count': sent_pair_count,
             'sent_pairs': sent_pair_structs,
             }
         ret_struct.append (tgt_phrase_struct)
