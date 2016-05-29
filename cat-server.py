@@ -398,7 +398,6 @@ class MinimalConnection(SocketConnection):
     def rejectSuffix(self, data):
       print "rejectSuffix not implemented"
 
-
     @cat_event
     def setPrefix(self, data):
       start_time = time.time()
@@ -787,6 +786,40 @@ class MinimalConnection(SocketConnection):
       start_time = time.time()
       self._biconcor_proc(data).warm_up()
 
+    @cat_event
+    def redecode(self, data):
+      start_time = time.time()
+
+      source = toutf8(data[u'source'])
+      target = toutf8(data[u'target'])
+      annotation = data[u'annotation']
+
+      # do something silly
+      response = request_to_server_py(source, action='tokenize', target=target, use_cache=True)
+      srcSpans = fix_span_mismatches(response[u'data'][u'tokenization'][u'src'])
+      tgtSpans = fix_span_mismatches(response[u'data'][u'tokenization'][u'tgt'])
+      target = ""
+      for i in range(0, len(annotation)):
+        if target != "":
+          target = target + " "
+        if (annotation[i] == 0):
+          target = target + "neutral"
+        else:
+          target = target + "marked"
+        annotation[i] = -annotation[i]
+      response = request_to_server_py(source, action='tokenize', target=target, use_cache=True)
+      tgtSpans = fix_span_mismatches(response[u'data'][u'tokenization'][u'tgt'])
+
+      # send results
+      self.emit ('redecodeResult', {
+        'errors' : [],
+        'data': { 'source': source,
+	          'sourceSegmentation': srcSpans,
+                  'nbest': ( { 'target': target , 'targetSegmentation': tgtSpans } ,
+                             { 'target': target , 'targetSegmentation': tgtSpans } ),
+                  'annotation': annotation,
+                  'elapsedTime': time.time() - start_time }
+      } )
 
 # We setup our connection handler. You can define different endpoints
 # for additional socket.io services.
