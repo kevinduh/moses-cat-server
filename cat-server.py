@@ -428,13 +428,14 @@ class MinimalConnection(SocketConnection):
 	    t = time.time()
 	    err = open("%s/predict.%s.%s.err" % (log_dir,sgId,t),"w")
 	    log = "%s/predict.%s.%s.in" % (log_dir,sgId,t)
-            p = subprocess.Popen(['./predict','-W','-s','3','3','-t','0.4','-f','5','-m','0.1','-l',log], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=err, preexec_fn = lambda: os.nice(10),)
+            p = subprocess.Popen(['/opt/casmacat/predict','-W','-s','3','3','-t','0.4','-f','5','-m','0.1','-l',log], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=err, preexec_fn = lambda: os.nice(10),)
             p.stdin.write(searchGraph[sgId])
             p.stdin.flush()
 	    predictProcess[ sgId ] = p
 	    timeout = 3
         except:
             logging.debug("could not create prediction process")
+            print sys.exc_info()[0]
       try:
           predictProcess[ sgId ].stdin.write(userInput+'\n')
           predictProcess[ sgId ].stdin.flush()
